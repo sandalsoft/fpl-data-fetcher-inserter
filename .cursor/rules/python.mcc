@@ -1,0 +1,35 @@
+# Python cursorrules for Fantasy Premier League Data Fetcher and Inserter
+# Enforces project conventions, functional programming, and tooling preferences
+
+[rules]
+# Use 'uv' for dependency management and tooling
+use uv
+
+# Enforce Python version >= 3.12
+python_version = ">=3.12"
+
+# Prefer functional programming patterns
+prefer_functional = true
+
+# Disallow committing .env files
+ignore_files = [".env"]
+
+# Always update .env.example for environment variables
+require_env_example = true
+
+# Ensure README.md and ARCHITECTURE.md are updated with new features and design changes
+require_readme_update = true
+require_architecture_update = true
+
+# Run and verify the application after code changes
+require_post_edit_run = true
+
+# Test for regressions after new features or fixes
+require_regression_test = true
+
+# Use dependency inversion and avoid unnecessary duplication/complexity
+prefer_dependency_inversion = true
+avoid_duplication = true
+
+# Use venv for virtual environments
+prefer_venv = true 

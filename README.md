@@ -11,11 +11,28 @@ This application fetches Fantasy Premier League (FPL) statistics from the offici
 - Provides a configurable setup for database connection and API endpoints.
 - Designed for easy extension and customization.
 
+## Supported FPL API Endpoints
+
+The application interacts with several official Fantasy Premier League API endpoints, including:
+
+- **General Information**: `/bootstrap-static/` — Summary of gameweeks, teams, players, and settings.
+- **Fixtures**: `/fixtures/` — All fixture objects, including statistics for past fixtures.
+- **Fixtures by Gameweek**: `/fixtures/?event={event_id}` — Fixtures for a specific gameweek.
+- **Player Summary**: `/element-summary/{element_id}/` — Detailed data for a specific player.
+- **Gameweek Live Data**: `/event/{event_id}/live/` — Live statistics for every player in a gameweek.
+- **Manager Data**: `/me/` — Data for the authenticated manager (requires authentication).
+- **League Cup Status**: `/league/{league_id}/cup-status/` — Cup status for a league.
+- **Entry Data**: `/entry/{entry_id}/` — Data for a specific team entry.
+- **H2H Matches**: `/h2h-matches/league/{league_id}/entry/{entry_id}/page/{page}/` — Head-to-head matches for a league and entry.
+- **League Standings**: `/leagues-classic/{league_id}/standings/` — Classic league standings.
+
+See `APIs.md` for more details on each endpoint.
+
 ## Prerequisites
 
 Before you begin, ensure you have met the following requirements:
 
-- Python 3.8 or higher
+- Python 3.12 or higher
 - Pip (Python package installer)
 - PostgreSQL database server
 - Git (for cloning the repository)
@@ -52,6 +69,8 @@ python main.py
 ```
 
 You can schedule this script to run periodically using cron jobs or other scheduling tools to keep your database updated.
+
+Note: The application can be configured to fetch data from any of the supported FPL API endpoints. See the 'Supported FPL API Endpoints' section above for details on available endpoints and their usage.
 
 ## Environment Variables
 
