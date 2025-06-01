@@ -1,101 +1,231 @@
-# Fantasy Premier League Data Fetcher and Inserter
+# FPL Data Fetcher & Inserter
 
-## Description
-
-This application fetches Fantasy Premier League (FPL) statistics from the official FPL API and inserts them into a PostgreSQL database. It is designed to help FPL enthusiasts and data analysts to easily access and analyze FPL data.
+A robust Python application that fetches Fantasy Premier League (FPL) data from the official API and stores it in a PostgreSQL database. The system handles teams, players, fixtures, and gameweeks data with comprehensive error handling and flexible CLI options.
 
 ## Features
 
-- Fetches comprehensive FPL data, including player statistics, team information, fixtures, and more.
-- Inserts and updates data efficiently into a PostgreSQL database.
-- Provides a configurable setup for database connection and API endpoints.
-- Designed for easy extension and customization.
-
-## Supported FPL API Endpoints
-
-The application interacts with several official Fantasy Premier League API endpoints, including:
-
-- **General Information**: `/bootstrap-static/` — Summary of gameweeks, teams, players, and settings.
-- **Fixtures**: `/fixtures/` — All fixture objects, including statistics for past fixtures.
-- **Fixtures by Gameweek**: `/fixtures/?event={event_id}` — Fixtures for a specific gameweek.
-- **Player Summary**: `/element-summary/{element_id}/` — Detailed data for a specific player.
-- **Gameweek Live Data**: `/event/{event_id}/live/` — Live statistics for every player in a gameweek.
-- **Manager Data**: `/me/` — Data for the authenticated manager (requires authentication).
-- **League Cup Status**: `/league/{league_id}/cup-status/` — Cup status for a league.
-- **Entry Data**: `/entry/{entry_id}/` — Data for a specific team entry.
-- **H2H Matches**: `/h2h-matches/league/{league_id}/entry/{entry_id}/page/{page}/` — Head-to-head matches for a league and entry.
-- **League Standings**: `/leagues-classic/{league_id}/standings/` — Classic league standings.
-
-See `APIs.md` for more details on each endpoint.
-
-## Prerequisites
-
-Before you begin, ensure you have met the following requirements:
-
-- Python 3.12 or higher
-- Pip (Python package installer)
-- PostgreSQL database server
-- Git (for cloning the repository)
+- **Complete FPL Data Pipeline**: Fetches, parses, and stores teams and players data
+- **Robust Database Integration**: PostgreSQL with automatic schema creation and upsert operations
+- **Flexible CLI**: Control what data types to process with command-line flags
+- **Dry-Run Mode**: Preview operations without database changes
+- **Comprehensive Logging**: Detailed logging with timestamps and module names
+- **Error Handling**: Graceful handling of API failures and database errors
+- **Data Validation**: Pydantic models ensure data integrity
+- **Extensible Architecture**: Modular design for easy feature additions
 
 ## Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    cd fpl-data-fetcher-inserter
-    ```
-2.  **Create and activate a virtual environment (recommended):**
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-    ```
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  **Set up environment variables:**
-    Copy the `.env.example` file to `.env` and update it with your database credentials and any other necessary configurations.
-    ```bash
-    cp .env.example .env
-    ```
-    **Note:** Never commit your actual `.env` file to version control.
+### Prerequisites
+
+- Python 3.12+
+- PostgreSQL database
+- UV package manager (or pip)
+
+### Setup
+
+1. **Clone the repository**
+
+   ```bash
+   git clone <repository-url>
+   cd fpl-data-fetcher-inserter
+   ```
+
+2. **Create virtual environment and install dependencies**
+
+   ```bash
+   uv venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   uv pip install -r requirements.txt
+   ```
+
+3. **Configure database connection**
+
+   ```bash
+   cp .env_example .env
+   # Edit .env with your PostgreSQL credentials
+   ```
+
+4. **Set up PostgreSQL database**
+   ```sql
+   CREATE DATABASE fpl_data;
+   CREATE USER fpl_user WITH PASSWORD 'fpl_password';
+   GRANT ALL PRIVILEGES ON DATABASE fpl_data TO fpl_user;
+   ```
 
 ## Usage
 
-To run the application and fetch/insert data:
+### Basic Usage
 
 ```bash
-python main.py
+# Fetch and insert all data (teams + players)
+python -m src.app
+
+# Preview what would be processed (dry-run mode)
+python -m src.app --dry-run
+
+# Process only teams data
+python -m src.app --teams
+
+# Process only players data
+python -m src.app --players
+
+# Verbose output with configuration details
+python -m src.app --verbose --dry-run
 ```
 
-You can schedule this script to run periodically using cron jobs or other scheduling tools to keep your database updated.
+### CLI Options
 
-Note: The application can be configured to fetch data from any of the supported FPL API endpoints. See the 'Supported FPL API Endpoints' section above for details on available endpoints and their usage.
+- `--dry-run`: Preview mode - fetch and parse data but skip database insertion
+- `--teams`: Process only teams data
+- `--players`: Process only players data
+- `--verbose, -v`: Enable verbose logging output
+- `--help, -h`: Show help message with examples
 
-## Environment Variables
+### Configuration
 
-The following environment variables are used by the application. These should be defined in your `.env` file:
+The application uses environment variables loaded from `.env_example`:
 
-- `DB_NAME`: The name of your PostgreSQL database.
-- `DB_USER`: The username for your PostgreSQL database.
-- `DB_PASSWORD`: The password for your PostgreSQL database.
-- `DB_HOST`: The host of your PostgreSQL database (e.g., `localhost`).
-- `DB_PORT`: The port for your PostgreSQL database (e.g., `5432`).
-- `FPL_API_URL`: The base URL for the Fantasy Premier League API (e.g., `https://fantasy.premierleague.com/api/`).
+```bash
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=fpl_data
+DB_USER=fpl_user
+DB_PASSWORD=fpl_password
+FPL_API_URL=https://fantasy.premierleague.com/api
+```
 
-Refer to `.env.example` for a template.
+## Data Processing
 
-## Contributing
+The application processes the following FPL data:
 
-Contributions are welcome! If you have suggestions for improvements or find any issues, please feel free to:
+### Teams (20 teams)
 
-1.  Fork the repository.
-2.  Create a new branch (`git checkout -b feature/your-feature-name`).
-3.  Make your changes.
-4.  Commit your changes (`git commit -m 'Add some feature'`).
-5.  Push to the branch (`git push origin feature/your-feature-name`).
-6.  Open a Pull Request.
+- Basic information: name, short name, code
+- League position and statistics: played, won, drawn, lost, points
+- Strength ratings: overall, attack, defence (home/away)
+- Form and availability status
+
+### Players (800+ players)
+
+- Personal information: names, team, position type
+- Performance statistics: goals, assists, minutes played
+- FPL metrics: cost, total points, ownership percentage
+- Advanced stats: expected goals, ICT index, form ratings
+- Injury and availability information
+
+## Database Schema
+
+The PostgreSQL schema includes:
+
+- **teams**: Team information and statistics
+- **players**: Comprehensive player data with foreign key to teams
+- **gameweeks**: Match week information (ready for future use)
+- **fixtures**: Match data (ready for future use)
+
+All tables include:
+
+- Automatic timestamp tracking (`created_at`, `updated_at`)
+- Primary keys and foreign key relationships
+- Optimized indexes for query performance
+- Upsert operations to handle data updates
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run specific test file
+python -m pytest tests/test_fetcher.py -v
+
+# Run with coverage
+python -m pytest tests/ --cov=src
+```
+
+### Project Structure
+
+```
+fpl-data-fetcher-inserter/
+├── src/
+│   ├── app.py          # Main application runner
+│   ├── config.py       # Configuration loading
+│   ├── fetcher.py      # FPL API data fetching
+│   ├── parser.py       # Data parsing and validation
+│   ├── models.py       # Pydantic data models
+│   ├── database.py     # Database operations
+│   └── utils.py        # Logging utilities
+├── tests/              # Test suite
+├── sql/                # Database schema
+├── requirements.txt    # Python dependencies
+└── .env_example       # Environment configuration template
+```
+
+## Architecture
+
+The application follows a modular pipeline architecture:
+
+1. **Configuration**: Load database and API settings
+2. **Data Fetching**: Retrieve data from FPL API endpoints
+3. **Data Parsing**: Validate and structure data using Pydantic models
+4. **Database Operations**: Insert/update data with upsert logic
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
+
+## Troubleshooting
+
+### Common Issues
+
+**Database Connection Failed**
+
+- Verify PostgreSQL is running
+- Check database credentials in `.env_example`
+- Ensure database and user exist
+
+**API Request Failed**
+
+- Check internet connection
+- Verify FPL API URL is accessible
+- API may be temporarily unavailable during maintenance
+
+**Import Errors**
+
+- Ensure virtual environment is activated
+- Run `uv pip install -r requirements.txt`
+- Check Python version compatibility
+
+### Logs
+
+The application provides detailed logging for troubleshooting:
+
+- API request/response information
+- Data parsing statistics
+- Database operation results
+- Error messages with context
+
+## Future Enhancements
+
+- Fixture data processing
+- Player gameweek history
+- Automated scheduling with cron
+- Change detection for incremental updates
+- Performance optimizations for large datasets
+- Additional data endpoints (transfers, chips, etc.)
 
 ## License
 
-This project is licensed under the MIT License - see the `LICENSE` file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+## Acknowledgments
+
+- Fantasy Premier League for providing the public API
+- The Python community for excellent data processing libraries
