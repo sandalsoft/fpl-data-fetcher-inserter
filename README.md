@@ -1,10 +1,10 @@
 # FPL Data Fetcher & Inserter
 
-A robust Python application that fetches Fantasy Premier League (FPL) data from the official API and stores it in a PostgreSQL database. The system handles teams, players, fixtures, and gameweeks data with comprehensive error handling and flexible CLI options.
+A robust Python application that fetches Fantasy Premier League (FPL) data from the official API and stores it in a PostgreSQL database. The system handles teams, players, gameweeks, and fixtures data with comprehensive error handling and flexible CLI options.
 
 ## Features
 
-- **Complete FPL Data Pipeline**: Fetches, parses, and stores teams and players data
+- **Complete FPL Data Pipeline**: Fetches, parses, and stores teams, players, gameweeks, and fixtures data
 - **Robust Database Integration**: PostgreSQL with automatic schema creation and upsert operations
 - **Flexible CLI**: Control what data types to process with command-line flags
 - **Dry-Run Mode**: Preview operations without database changes
@@ -13,6 +13,39 @@ A robust Python application that fetches Fantasy Premier League (FPL) data from 
 - **Data Validation**: Pydantic models ensure data integrity
 - **Schema Validation**: Built-in SQL syntax validation and proper PostgreSQL function handling
 - **Extensible Architecture**: Modular design for easy feature additions
+
+## Data Processing
+
+The application processes the following FPL data:
+
+### Teams (20 teams)
+
+- Basic information: name, short name, code
+- League position and statistics: played, won, drawn, lost, points
+- Strength ratings: overall, attack, defence (home/away)
+- Form and availability status
+
+### Players (800+ players)
+
+- Personal information: names, team, position type
+- Performance statistics: goals, assists, minutes played
+- FPL metrics: cost, total points, ownership percentage
+- Advanced stats: expected goals, ICT index, form ratings
+- Injury and availability information
+
+### Gameweeks (38 gameweeks)
+
+- Gameweek information: name, deadline times
+- Status flags: current, previous, next, finished
+- Statistics: average scores, highest scores
+- Administrative data: transfers made, most selected players
+
+### Fixtures (380+ fixtures)
+
+- Match information: teams, kickoff times, scores
+- Status: finished, started, provisional
+- Difficulty ratings for both teams
+- Detailed match statistics stored as JSON
 
 ## Installation
 
@@ -66,17 +99,15 @@ A robust Python application that fetches Fantasy Premier League (FPL) data from 
 ### Basic Usage
 
 ```bash
-# Fetch and insert all data (teams + players)
+# Fetch and insert all data (teams + players + gameweeks + fixtures)
 python -m src.app
 
 # Preview what would be processed (dry-run mode)
 python -m src.app --dry-run
 
-# Process only teams data
-python -m src.app --teams
-
-# Process only players data
-python -m src.app --players
+# Process only specific data types
+python -m src.app --teams --players
+python -m src.app --gameweeks --fixtures
 
 # Verbose output with configuration details
 python -m src.app --verbose --dry-run
@@ -87,8 +118,12 @@ python -m src.app --verbose --dry-run
 - `--dry-run`: Preview mode - fetch and parse data but skip database insertion
 - `--teams`: Process only teams data
 - `--players`: Process only players data
+- `--gameweeks`: Process only gameweeks data
+- `--fixtures`: Process only fixtures data
 - `--verbose, -v`: Enable verbose logging output
 - `--help, -h`: Show help message with examples
+
+**Note**: If no specific data type flags are provided, the application defaults to processing all data types (teams, players, gameweeks, and fixtures).
 
 ### Configuration
 
@@ -103,33 +138,14 @@ DB_PASSWORD=fpl_password
 FPL_API_URL=https://fantasy.premierleague.com/api
 ```
 
-## Data Processing
-
-The application processes the following FPL data:
-
-### Teams (20 teams)
-
-- Basic information: name, short name, code
-- League position and statistics: played, won, drawn, lost, points
-- Strength ratings: overall, attack, defence (home/away)
-- Form and availability status
-
-### Players (800+ players)
-
-- Personal information: names, team, position type
-- Performance statistics: goals, assists, minutes played
-- FPL metrics: cost, total points, ownership percentage
-- Advanced stats: expected goals, ICT index, form ratings
-- Injury and availability information
-
 ## Database Schema
 
 The PostgreSQL schema includes:
 
 - **teams**: Team information and statistics
 - **players**: Comprehensive player data with foreign key to teams
-- **gameweeks**: Match week information (ready for future use)
-- **fixtures**: Match data (ready for future use)
+- **gameweeks**: Match week information with deadlines and status flags
+- **fixtures**: Match data with teams, scores, and detailed statistics (JSONB)
 
 All tables include:
 
@@ -172,7 +188,7 @@ python -m pytest tests/ --cov=src
 
 ### Project Structure
 
-```api
+```
 fpl-data-fetcher-inserter/
 ├── src/
 │   ├── app.py          # Main application runner
@@ -194,7 +210,7 @@ fpl-data-fetcher-inserter/
 The application follows a modular pipeline architecture:
 
 1. **Configuration**: Load database and API settings
-2. **Data Fetching**: Retrieve data from FPL API endpoints
+2. **Data Fetching**: Retrieve data from FPL API endpoints (`/bootstrap-static/` and `/fixtures/`)
 3. **Data Parsing**: Validate and structure data using Pydantic models
 4. **Database Operations**: Insert/update data with upsert logic
 
@@ -235,18 +251,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 The application provides detailed logging for troubleshooting:
 
 - API request/response information
-- Data parsing statistics
+- Data parsing statistics (teams, players, gameweeks, fixtures)
 - Database operation results
 - Error messages with context
 
 ## Future Enhancements
 
-- Fixture data processing
-- Player gameweek history
+- Player gameweek history data
 - Automated scheduling with cron
 - Change detection for incremental updates
 - Performance optimizations for large datasets
 - Additional data endpoints (transfers, chips, etc.)
+- Real-time fixture updates
 
 ## License
 

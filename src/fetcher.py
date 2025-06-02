@@ -1,7 +1,8 @@
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 from .config import get_config
 from .utils import get_logger
+import json
 
 logger = get_logger(__name__)
 
@@ -80,3 +81,8 @@ def fetch_bootstrap_data() -> Dict[str, Any]:
         FPLAPIError: If API request fails
     """
     return fetch_endpoint("/bootstrap-static/")
+
+
+def fetch_fixtures_data() -> Optional[List[Dict]]:
+    """Fetches the fixtures data from FPL API."""
+    return fetch_endpoint("/fixtures/")

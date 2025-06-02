@@ -10,6 +10,12 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 ┌─────────────────────────────────────────────────────────────────┐
 │                         FPL API                                 │
 │              https://fantasy.premierleague.com/api              │
+│                                                                 │
+│  ┌─────────────────┐              ┌─────────────────┐          │
+│  │ /bootstrap-static/│              │   /fixtures/    │          │
+│  │ (teams, players, │              │   (fixtures)    │          │
+│  │  gameweeks)     │              │                 │          │
+│  └─────────────────┘              └─────────────────┘          │
 └─────────────────────────────────────────────────────────────────┘
                                     │
                                     │ HTTP Requests
@@ -61,6 +67,7 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 
 - `fetch_endpoint(endpoint: str)`: Generic API fetcher
 - `fetch_bootstrap_data()`: Specialized bootstrap endpoint
+- `fetch_fixtures_data()`: Specialized fixtures endpoint
 - Custom `FPLAPIError` exception class
 
 **Design Decisions**:
@@ -78,6 +85,8 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 
 - `parse_teams(data: dict)`: Team data parser with validation
 - `parse_players(data: dict)`: Player data parser with validation
+- `parse_gameweeks(data: dict)`: Gameweek data parser with validation
+- `parse_fixtures(data: list)`: Fixture data parser with validation
 - Error handling for malformed data
 
 **Design Decisions**:
@@ -95,8 +104,8 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 
 - `Team`: Premier League team information
 - `Player`: Player statistics and information
-- `Gameweek`: Match week data (future use)
-- `Fixture`: Match data (future use)
+- `Gameweek`: Match week data with deadlines and status
+- `Fixture`: Match data with teams, scores, and statistics
 
 **Design Decisions**:
 
@@ -113,7 +122,7 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 
 - `get_connection()`: Database connection factory
 - `DatabaseManager`: Context manager for connection lifecycle
-- `insert_teams()`, `insert_players()`: Upsert operations
+- `insert_teams()`, `insert_players()`, `insert_gameweeks()`, `insert_fixtures()`: Upsert operations
 - `execute_schema()`: Enhanced schema management with proper SQL parsing
 
 **Design Decisions**:
@@ -124,6 +133,7 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 - Batch operations for performance
 - Comprehensive error handling with rollback
 - **Enhanced SQL parsing**: Properly handles PostgreSQL functions with dollar-quoted strings
+- **JSON handling**: Converts Python objects to JSON for JSONB fields
 
 **Schema Execution Improvements**:
 
@@ -151,7 +161,7 @@ This resolves issues with executing schema files containing PostgreSQL functions
 
 - Pipeline pattern with clear sequential steps
 - Dry-run mode for safe testing
-- Selective data processing (teams/players)
+- Selective data processing (teams/players/gameweeks/fixtures)
 - Comprehensive CLI with argparse
 - Graceful error handling with proper exit codes
 
@@ -168,6 +178,52 @@ This resolves issues with executing schema files containing PostgreSQL functions
 - Centralized logging configuration
 - Module-specific loggers for better debugging
 - Consistent timestamp and formatting
+
+## Data Flow
+
+The application orchestrates a pipeline to fetch, parse, and store FPL data:
+
+1. **Initialization (`src/app.py:main`)**:
+
+   - Parses command-line arguments (e.g., `--dry-run`, `--teams`, `--players`, `--gameweeks`, `--fixtures`).
+   - Sets up logging.
+
+2. **Configuration Loading (`src/config.py`)**:
+
+   - Loads environment variables (database credentials, API URL) using `python-dotenv`.
+   - Provides a configuration dictionary accessible throughout the application.
+
+3. **Data Fetching (`src/fetcher.py`)**:
+
+   - `fetch_bootstrap_data()`: Makes an HTTP GET request to the FPL API's `/bootstrap-static/` endpoint. This endpoint provides a large JSON object containing data for teams, players, player types, and gameweeks (events).
+   - `fetch_fixtures_data()`: Makes an HTTP GET request to the FPL API's `/fixtures/` endpoint. This endpoint provides a JSON array of all fixtures for the season.
+   - Handles potential HTTP errors and returns the JSON response.
+
+4. **Data Parsing (`src/parser.py`)**:
+
+   - `parse_teams(bootstrap_data)`: Extracts team-specific information from the bootstrap data and converts it into a list of `Team` Pydantic models.
+   - `parse_players(bootstrap_data)`: Extracts player-specific information, including their team ID and element type (player position), and converts it into a list of `Player` Pydantic models.
+   - `parse_gameweeks(bootstrap_data)`: Extracts gameweek (event) information from the `events` key in the bootstrap data and converts it into a list of `Gameweek` Pydantic models.
+   - `parse_fixtures(fixtures_data)`: Extracts fixture information from the fixtures data list and converts it into a list of `Fixture` Pydantic models. Handles complex nested statistics data.
+   - Pydantic models (`src/models.py`) are used for data validation and structuring.
+
+5. **Database Interaction (`src.database.py`)**:
+
+   - `DatabaseManager`: A context manager to handle database connections (`psycopg2`).
+   - `execute_schema(conn)`: Reads and executes SQL commands from `sql/schema.sql` to create necessary tables if they don't already exist. This includes `teams`, `players`, `element_types`, `gameweeks`, and `fixtures`.
+   - `insert_teams(conn, teams_data)`: Inserts/updates team data into the `teams` table.
+   - `insert_players(conn, players_data)`: Inserts/updates player data into the `players` table.
+   - `insert_gameweeks(conn, gameweeks_data)`: Inserts/updates gameweek data into the `gameweeks` table.
+   - `insert_fixtures(conn, fixtures_data)`: Inserts/updates fixture data into the `fixtures` table. Converts complex statistics to JSON for JSONB storage.
+   - Uses `ON CONFLICT DO UPDATE` (upsert) for `teams`, `players`, `gameweeks`, and `fixtures` to handle re-runs of the script.
+
+6. **Orchestration (`src/app.py:run_bootstrap_pipeline`)**:
+   - Calls the fetcher, parser, and database modules in sequence.
+   - Handles `dry-run` logic to skip database writes.
+   - Manages selective processing of data types based on command-line arguments.
+   - Ensures data is inserted in an order that respects foreign key constraints (e.g., teams before players, gameweeks before fixtures if fixtures reference gameweeks).
+
+The `element_types` table is populated once by `schema.sql` as this data is static (Goalkeeper, Defender, Midfielder, Forward).
 
 ## Database Schema Design
 
@@ -208,11 +264,49 @@ CREATE TABLE players (
 );
 ```
 
+#### gameweeks
+
+```sql
+CREATE TABLE gameweeks (
+    id INTEGER PRIMARY KEY,           -- FPL gameweek ID
+    name VARCHAR(50) NOT NULL,        -- Gameweek name (e.g., "Gameweek 1")
+    deadline_time TIMESTAMP,          -- Deadline for the gameweek
+    is_previous BOOLEAN DEFAULT FALSE,
+    is_current BOOLEAN DEFAULT FALSE,
+    is_next BOOLEAN DEFAULT FALSE,
+    finished BOOLEAN DEFAULT FALSE,
+    -- ... other relevant fields from the API
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+#### fixtures
+
+```sql
+CREATE TABLE fixtures (
+    id INTEGER PRIMARY KEY,                      -- FPL fixture ID
+    event INTEGER REFERENCES gameweeks(id),      -- Gameweek ID the fixture belongs to
+    team_h INTEGER NOT NULL REFERENCES teams(id), -- Home team ID
+    team_a INTEGER NOT NULL REFERENCES teams(id), -- Away team ID
+    kickoff_time TIMESTAMP,                      -- Match kickoff time
+    team_h_score INTEGER,                        -- Home team score (can be NULL if not played)
+    team_a_score INTEGER,                        -- Away team score (can be NULL if not played)
+    finished BOOLEAN DEFAULT FALSE,              -- Boolean flag
+    stats JSONB DEFAULT '[]'::jsonb,             -- Complex match statistics
+    -- ... other relevant fields from the API
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 ### Indexes and Performance
 
 - `idx_players_team`: Fast player lookups by team
 - `idx_players_element_type`: Position-based queries
 - `idx_fixtures_event`: Gameweek-based fixture queries
+- `idx_fixtures_teams`: Team-based fixture queries
+- `idx_fixtures_kickoff`: Time-based fixture queries
 - Partial indexes for current/next gameweeks
 
 ## Error Handling Strategy
@@ -244,16 +338,16 @@ CREATE TABLE players (
 
 ```python
 # Easy to add new endpoints
-def fetch_fixtures() -> dict:
-    return fetch_endpoint("/fixtures/")
+def fetch_player_history() -> dict:
+    return fetch_endpoint("/element-summary/{player_id}/")
 
 # New parser functions
-def parse_fixtures(data: dict) -> List[Fixture]:
+def parse_player_history(data: dict) -> List[PlayerHistory]:
     # Implementation
     pass
 
 # New insertion functions
-def insert_fixtures(conn: connection, fixtures: List[Fixture]) -> None:
+def insert_player_history(conn: connection, history: List[PlayerHistory]) -> None:
     # Implementation
     pass
 ```
@@ -313,6 +407,7 @@ tests/
 ### 3. API Efficiency
 
 - **Single API call** for bootstrap data
+- **Separate endpoint** for fixtures data
 - **Generic endpoint function** for reuse
 - **Error caching** to avoid repeated failures (future)
 

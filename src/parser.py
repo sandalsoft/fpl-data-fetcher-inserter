@@ -71,3 +71,69 @@ def parse_players(data: Dict[str, Any]) -> List[Player]:
 
     logger.info(f"Successfully parsed {len(players)} players")
     return players
+
+
+def parse_gameweeks(data: Dict[str, Any]) -> List[Gameweek]:
+    """Parse gameweeks (events) data from bootstrap-static API response.
+
+    Args:
+        data: The bootstrap-static JSON response
+
+    Returns:
+        List of Gameweek objects
+
+    Raises:
+        KeyError: If expected 'events' key is missing
+        ValidationError: If gameweek data doesn't match Gameweek model
+    """
+    logger.info("Parsing gameweeks data")
+
+    if 'events' not in data:
+        raise KeyError("'events' key not found in bootstrap data")
+
+    events_data = data['events']
+    gameweeks = []
+
+    for event_data in events_data:
+        try:
+            gameweek = Gameweek(**event_data)
+            gameweeks.append(gameweek)
+        except Exception as e:
+            logger.error(
+                f"Failed to parse gameweek data for event ID {event_data.get('id', 'unknown')}: {e}")
+            raise
+
+    logger.info(f"Successfully parsed {len(gameweeks)} gameweeks")
+    return gameweeks
+
+
+def parse_fixtures(data: List[Dict[str, Any]]) -> List[Fixture]:
+    """Parse fixtures data from fixtures API response.
+
+    Args:
+        data: The fixtures JSON response (list of fixture objects)
+
+    Returns:
+        List of Fixture objects
+
+    Raises:
+        ValidationError: If fixture data doesn't match Fixture model
+    """
+    logger.info("Parsing fixtures data")
+
+    if not isinstance(data, list):
+        raise TypeError("Fixtures data should be a list")
+
+    fixtures = []
+
+    for fixture_data in data:
+        try:
+            fixture = Fixture(**fixture_data)
+            fixtures.append(fixture)
+        except Exception as e:
+            logger.error(
+                f"Failed to parse fixture data for fixture ID {fixture_data.get('id', 'unknown')}: {e}")
+            raise
+
+    logger.info(f"Successfully parsed {len(fixtures)} fixtures")
+    return fixtures

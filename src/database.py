@@ -3,8 +3,9 @@ from psycopg2.extensions import connection
 from typing import Optional, List
 from .config import get_config
 from .utils import get_logger
-from .models import Team, Player
+from .models import Team, Player, Gameweek, Fixture
 import re
+import json
 
 logger = get_logger(__name__)
 
@@ -329,6 +330,156 @@ def insert_players(conn: connection, players: List[Player]) -> None:
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert players: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_gameweeks(conn: connection, gameweeks: List[Gameweek]) -> None:
+    """Insert gameweek data into the database.
+
+    Args:
+        conn: Database connection
+        gameweeks: List of Gameweek objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not gameweeks:
+        logger.info("No gameweeks to insert")
+        return
+
+    logger.info(f"Inserting {len(gameweeks)} gameweeks into database")
+
+    insert_sql = """
+        INSERT INTO gameweeks (
+            id, name, deadline_time, finished, is_previous, is_current, is_next,
+            release_time, average_entry_score, data_checked, highest_scoring_entry,
+            deadline_time_epoch, deadline_time_game_offset, highest_score,
+            cup_leagues_created, h2h_ko_matches_created, can_enter, can_manage,
+            released, ranked_count, transfers_made, most_selected,
+            most_transferred_in, most_captained, most_vice_captained, top_element
+        ) VALUES (
+            %(id)s, %(name)s, %(deadline_time)s, %(finished)s, %(is_previous)s,
+            %(is_current)s, %(is_next)s, %(release_time)s, %(average_entry_score)s,
+            %(data_checked)s, %(highest_scoring_entry)s, %(deadline_time_epoch)s,
+            %(deadline_time_game_offset)s, %(highest_score)s, %(cup_leagues_created)s,
+            %(h2h_ko_matches_created)s, %(can_enter)s, %(can_manage)s, %(released)s,
+            %(ranked_count)s, %(transfers_made)s, %(most_selected)s,
+            %(most_transferred_in)s, %(most_captained)s, %(most_vice_captained)s,
+            %(top_element)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            deadline_time = EXCLUDED.deadline_time,
+            finished = EXCLUDED.finished,
+            is_previous = EXCLUDED.is_previous,
+            is_current = EXCLUDED.is_current,
+            is_next = EXCLUDED.is_next,
+            release_time = EXCLUDED.release_time,
+            average_entry_score = EXCLUDED.average_entry_score,
+            data_checked = EXCLUDED.data_checked,
+            highest_scoring_entry = EXCLUDED.highest_scoring_entry,
+            deadline_time_epoch = EXCLUDED.deadline_time_epoch,
+            deadline_time_game_offset = EXCLUDED.deadline_time_game_offset,
+            highest_score = EXCLUDED.highest_score,
+            cup_leagues_created = EXCLUDED.cup_leagues_created,
+            h2h_ko_matches_created = EXCLUDED.h2h_ko_matches_created,
+            can_enter = EXCLUDED.can_enter,
+            can_manage = EXCLUDED.can_manage,
+            released = EXCLUDED.released,
+            ranked_count = EXCLUDED.ranked_count,
+            transfers_made = EXCLUDED.transfers_made,
+            most_selected = EXCLUDED.most_selected,
+            most_transferred_in = EXCLUDED.most_transferred_in,
+            most_captained = EXCLUDED.most_captained,
+            most_vice_captained = EXCLUDED.most_vice_captained,
+            top_element = EXCLUDED.top_element
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert Gameweek objects to dictionaries for psycopg2
+            gameweeks_data = [gameweek.model_dump() for gameweek in gameweeks]
+
+            cursor.executemany(insert_sql, gameweeks_data)
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated {len(gameweeks)} gameweeks")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert gameweeks: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_fixtures(conn: connection, fixtures: List[Fixture]) -> None:
+    """Insert fixture data into the database.
+
+    Args:
+        conn: Database connection
+        fixtures: List of Fixture objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not fixtures:
+        logger.info("No fixtures to insert")
+        return
+
+    logger.info(f"Inserting {len(fixtures)} fixtures into database")
+
+    insert_sql = """
+        INSERT INTO fixtures (
+            id, code, event, kickoff_time, team_h, team_a, team_h_score,
+            team_a_score, finished, finished_provisional, started, minutes,
+            provisional_start_time, team_h_difficulty, team_a_difficulty,
+            pulse_id, stats
+        ) VALUES (
+            %(id)s, %(code)s, %(event)s, %(kickoff_time)s, %(team_h)s, %(team_a)s,
+            %(team_h_score)s, %(team_a_score)s, %(finished)s, %(finished_provisional)s,
+            %(started)s, %(minutes)s, %(provisional_start_time)s, %(team_h_difficulty)s,
+            %(team_a_difficulty)s, %(pulse_id)s, %(stats)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            code = EXCLUDED.code,
+            event = EXCLUDED.event,
+            kickoff_time = EXCLUDED.kickoff_time,
+            team_h = EXCLUDED.team_h,
+            team_a = EXCLUDED.team_a,
+            team_h_score = EXCLUDED.team_h_score,
+            team_a_score = EXCLUDED.team_a_score,
+            finished = EXCLUDED.finished,
+            finished_provisional = EXCLUDED.finished_provisional,
+            started = EXCLUDED.started,
+            minutes = EXCLUDED.minutes,
+            provisional_start_time = EXCLUDED.provisional_start_time,
+            team_h_difficulty = EXCLUDED.team_h_difficulty,
+            team_a_difficulty = EXCLUDED.team_a_difficulty,
+            pulse_id = EXCLUDED.pulse_id,
+            stats = EXCLUDED.stats
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert Fixture objects to dictionaries for psycopg2
+            fixtures_data = []
+            for fixture in fixtures:
+                fixture_dict = fixture.model_dump()
+                # Convert stats list to JSON string for JSONB field
+                if 'stats' in fixture_dict and fixture_dict['stats'] is not None:
+                    fixture_dict['stats'] = json.dumps(fixture_dict['stats'])
+                else:
+                    fixture_dict['stats'] = '[]'  # Default empty JSON array
+                fixtures_data.append(fixture_dict)
+
+            cursor.executemany(insert_sql, fixtures_data)
+            conn.commit()
+
+        logger.info(f"Successfully inserted/updated {len(fixtures)} fixtures")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert fixtures: {e}")
         conn.rollback()
         raise
 

@@ -10,7 +10,7 @@ def get_config() -> Dict[str, Any]:
         Dict containing configuration values
     """
     # Load environment variables from .env_example
-    load_dotenv(".env_example")
+    load_dotenv(".env")
 
     config = {
         "db_host": os.getenv("DB_HOST", "localhost"),
