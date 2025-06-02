@@ -6,7 +6,7 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 
 ## System Architecture
 
-```
+```ascii
 ┌─────────────────────────────────────────────────────────────────┐
 │                         FPL API                                 │
 │              https://fantasy.premierleague.com/api              │
@@ -381,7 +381,7 @@ def insert_player_history(conn: connection, history: List[PlayerHistory]) -> Non
 
 ### 3. Test Structure
 
-```
+```filetree
 tests/
 ├── test_fetcher.py     # API client tests
 ├── test_parser.py      # Data parsing tests
@@ -435,7 +435,7 @@ tests/
 
 ### 1. Production Deployment
 
-```
+```ascii
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Cron Job      │───▶│  Application    │───▶│   PostgreSQL    │
 │  (Scheduler)    │    │    Container    │    │    Database     │

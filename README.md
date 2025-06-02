@@ -188,7 +188,7 @@ python -m pytest tests/ --cov=src
 
 ### Project Structure
 
-```
+```filetree
 fpl-data-fetcher-inserter/
 ├── src/
 │   ├── app.py          # Main application runner
