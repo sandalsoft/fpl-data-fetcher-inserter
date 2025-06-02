@@ -55,6 +55,7 @@ A robust Python application that fetches Fantasy Premier League (FPL) data from 
    ```
 
 5. **Validate schema (optional)**
+
    ```bash
    # Validate SQL schema syntax without database connection
    python validate_schema.py
@@ -171,7 +172,7 @@ python -m pytest tests/ --cov=src
 
 ### Project Structure
 
-```
+```api
 fpl-data-fetcher-inserter/
 ├── src/
 │   ├── app.py          # Main application runner
@@ -205,25 +206,25 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 
 ### Common Issues
 
-**Database Connection Failed**
+#### Database Connection Failed
 
 - Verify PostgreSQL is running
 - Check database credentials in `.env_example`
 - Ensure database and user exist
 
-**Schema Execution Errors**
+#### Schema Execution Errors
 
 - Run `python validate_schema.py` to check for syntax issues
 - Ensure PostgreSQL functions use proper dollar-quote syntax
 - Check that all required tables and indexes are defined
 
-**API Request Failed**
+#### API Request Failed
 
 - Check internet connection
 - Verify FPL API URL is accessible
 - API may be temporarily unavailable during maintenance
 
-**Import Errors**
+#### Import Errors
 
 - Ensure virtual environment is activated
 - Run `uv pip install -r requirements.txt`

@@ -10,7 +10,8 @@ This document contains sample data structures for various Fantasy Premier League
 
 **Effective URL Fetched:** `https://fantasy.premierleague.com/api/bootstrap-static/`
 
-### Sample Response Structure:
+### Sample Response Structure for General Information
+
 ```json
 {
   "chips": [
@@ -96,10 +97,7 @@ This document contains sample data structures for various Fantasy Premier League
     "cup_type": null,
     "featured_entries": [],
     "element_sell_at_purchase_price": false,
-    "percentile_ranks": [
-      1,
-      "... 19 more item(s) ..."
-    ],
+    "percentile_ranks": [1, "... 19 more item(s) ..."],
     "underdog_differential": 5,
     "squad_squadplay": 11,
     "squad_squadsize": 15,
@@ -115,10 +113,7 @@ This document contains sample data structures for various Fantasy Premier League
     "transfers_cap": 20,
     "transfers_sell_on_fee": 0.5,
     "max_extra_free_transfers": 4,
-    "league_h2h_tiebreak_stats": [
-      "+goals_scored",
-      "... 1 more item(s) ..."
-    ],
+    "league_h2h_tiebreak_stats": ["+goals_scored", "... 1 more item(s) ..."],
     "timezone": "UTC"
   },
   "game_config": {
@@ -144,10 +139,7 @@ This document contains sample data structures for various Fantasy Premier League
       "cup_type": null,
       "featured_entries": [],
       "element_sell_at_purchase_price": false,
-      "percentile_ranks": [
-        1,
-        "... 19 more item(s) ..."
-      ],
+      "percentile_ranks": [1, "... 19 more item(s) ..."],
       "underdog_differential": 5,
       "squad_squadplay": 11,
       "squad_squadsize": 15,
@@ -163,10 +155,7 @@ This document contains sample data structures for various Fantasy Premier League
       "transfers_cap": 20,
       "transfers_sell_on_fee": 0.5,
       "max_extra_free_transfers": 4,
-      "league_h2h_tiebreak_stats": [
-        "+goals_scored",
-        "... 1 more item(s) ..."
-      ]
+      "league_h2h_tiebreak_stats": ["+goals_scored", "... 1 more item(s) ..."]
     },
     "scoring": {
       "long_play": 2,
@@ -313,9 +302,7 @@ This document contains sample data structures for various Fantasy Premier League
       "squad_min_play": 1,
       "squad_max_play": 1,
       "ui_shirt_specific": true,
-      "sub_positions_locked": [
-        12
-      ],
+      "sub_positions_locked": [12],
       "element_count": 82
     },
     "... 4 more item(s) ..."
@@ -441,7 +428,8 @@ This document contains sample data structures for various Fantasy Premier League
 
 **Effective URL Fetched:** `https://fantasy.premierleague.com/api/fixtures/`
 
-### Sample Response Structure:
+### Sample Response Structure for Fixtures
+
 ```json
 [
   {
@@ -489,7 +477,8 @@ This document contains sample data structures for various Fantasy Premier League
 
 **Effective URL Fetched:** `https://fantasy.premierleague.com/api/fixtures/?event=1`
 
-### Sample Response Structure:
+### Sample Response Structure for Fixtures by Gameweek
+
 ```json
 [
   {
@@ -537,7 +526,8 @@ This document contains sample data structures for various Fantasy Premier League
 
 **Effective URL Fetched:** `https://fantasy.premierleague.com/api/element-summary/1/`
 
-### Sample Response Structure:
+### Sample Response Structure for Player Summary
+
 ```json
 {
   "fixtures": [],
@@ -642,7 +632,8 @@ This document contains sample data structures for various Fantasy Premier League
 
 **Effective URL Fetched:** `https://fantasy.premierleague.com/api/event/1/live/`
 
-### Sample Response Structure:
+### Sample Response Structure for Gameweek Live Data
+
 ```json
 {
   "elements": [
@@ -756,4 +747,3 @@ You may need to provide specific IDs (e.g., for a league or entry) to test these
 You may need to provide specific IDs (e.g., for a league or entry) to test these endpoints.
 
 ---
-
