@@ -1,5 +1,6 @@
 -- FPL Data Database Schema
 -- Creates tables for Fantasy Premier League data
+
 -- Teams table
 CREATE TABLE IF NOT EXISTS teams (
   id INTEGER PRIMARY KEY,
@@ -140,52 +141,32 @@ CREATE TABLE IF NOT EXISTS fixtures (
   team_a_difficulty INTEGER,
   pulse_id INTEGER,
   -- Stats stored as JSONB for complex nested data
-  stats JSONB DEFAULT '[]' :: jsonb,
+  stats JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_players_team ON players(team);
-
 CREATE INDEX IF NOT EXISTS idx_players_element_type ON players(element_type);
-
 CREATE INDEX IF NOT EXISTS idx_fixtures_event ON fixtures(event);
-
 CREATE INDEX IF NOT EXISTS idx_fixtures_teams ON fixtures(team_h, team_a);
-
 CREATE INDEX IF NOT EXISTS idx_fixtures_kickoff ON fixtures(kickoff_time);
-
-CREATE INDEX IF NOT EXISTS idx_gameweeks_current ON gameweeks(is_current)
-WHERE
-  is_current = TRUE;
-
-CREATE INDEX IF NOT EXISTS idx_gameweeks_next ON gameweeks(is_next)
-WHERE
-  is_next = TRUE;
+CREATE INDEX IF NOT EXISTS idx_gameweeks_current ON gameweeks(is_current) WHERE is_current = TRUE;
+CREATE INDEX IF NOT EXISTS idx_gameweeks_next ON gameweeks(is_next) WHERE is_next = TRUE;
 
 -- Update triggers for updated_at timestamps
-CREATE
-OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $ $ BEGIN NEW.updated_at = CURRENT_TIMESTAMP;
-
-RETURN NEW;
-
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS '
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
 END;
+';
 
-$ $ language 'plpgsql';
-
-CREATE TRIGGER update_teams_updated_at BEFORE
-UPDATE
-  ON teams FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_players_updated_at BEFORE
-UPDATE
-  ON players FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_fixtures_updated_at BEFORE
-UPDATE
-  ON fixtures FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_gameweeks_updated_at BEFORE
-UPDATE
-  ON gameweeks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON teams FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_players_updated_at BEFORE UPDATE ON players FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_fixtures_updated_at BEFORE UPDATE ON fixtures FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_gameweeks_updated_at BEFORE UPDATE ON gameweeks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column(); 

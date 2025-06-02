@@ -11,6 +11,7 @@ A robust Python application that fetches Fantasy Premier League (FPL) data from 
 - **Comprehensive Logging**: Detailed logging with timestamps and module names
 - **Error Handling**: Graceful handling of API failures and database errors
 - **Data Validation**: Pydantic models ensure data integrity
+- **Schema Validation**: Built-in SQL syntax validation and proper PostgreSQL function handling
 - **Extensible Architecture**: Modular design for easy feature additions
 
 ## Installation
@@ -46,10 +47,17 @@ A robust Python application that fetches Fantasy Premier League (FPL) data from 
    ```
 
 4. **Set up PostgreSQL database**
+
    ```sql
    CREATE DATABASE fpl_data;
    CREATE USER fpl_user WITH PASSWORD 'fpl_password';
    GRANT ALL PRIVILEGES ON DATABASE fpl_data TO fpl_user;
+   ```
+
+5. **Validate schema (optional)**
+   ```bash
+   # Validate SQL schema syntax without database connection
+   python validate_schema.py
    ```
 
 ## Usage
@@ -128,6 +136,23 @@ All tables include:
 - Primary keys and foreign key relationships
 - Optimized indexes for query performance
 - Upsert operations to handle data updates
+- Proper PostgreSQL function syntax with dollar-quoted strings
+
+### Schema Validation
+
+The project includes a schema validation utility:
+
+```bash
+# Validate schema syntax without database connection
+python validate_schema.py
+```
+
+This validates:
+
+- PostgreSQL function syntax (dollar quotes, BEGIN/END blocks)
+- Table and index definitions
+- Trigger creation statements
+- Overall SQL structure
 
 ## Development
 
@@ -158,6 +183,7 @@ fpl-data-fetcher-inserter/
 │   └── utils.py        # Logging utilities
 ├── tests/              # Test suite
 ├── sql/                # Database schema
+├── validate_schema.py  # Schema validation utility
 ├── requirements.txt    # Python dependencies
 └── .env_example       # Environment configuration template
 ```
@@ -171,6 +197,8 @@ The application follows a modular pipeline architecture:
 3. **Data Parsing**: Validate and structure data using Pydantic models
 4. **Database Operations**: Insert/update data with upsert logic
 
+The database module includes enhanced schema execution that properly handles PostgreSQL functions with dollar-quoted strings by parsing SQL statements individually rather than executing the entire file as one statement.
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 
 ## Troubleshooting
@@ -182,6 +210,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 - Verify PostgreSQL is running
 - Check database credentials in `.env_example`
 - Ensure database and user exist
+
+**Schema Execution Errors**
+
+- Run `python validate_schema.py` to check for syntax issues
+- Ensure PostgreSQL functions use proper dollar-quote syntax
+- Check that all required tables and indexes are defined
 
 **API Request Failed**
 

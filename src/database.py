@@ -4,6 +4,7 @@ from typing import Optional, List
 from .config import get_config
 from .utils import get_logger
 from .models import Team, Player
+import re
 
 logger = get_logger(__name__)
 
@@ -83,7 +84,67 @@ def execute_schema(conn: connection, schema_file: str = "sql/schema.sql") -> Non
             schema_sql = f.read()
 
         with conn.cursor() as cursor:
-            cursor.execute(schema_sql)
+            # Split the SQL content by semicolons, but be careful with functions
+            # that use dollar quotes or single quotes which can contain semicolons
+            statements = []
+            current_statement = ""
+            in_dollar_quote = False
+            in_single_quote = False
+            dollar_tag = ""
+
+            lines = schema_sql.split('\n')
+            for line in lines:
+                line = line.strip()
+
+                # Skip empty lines and comments
+                if not line or line.startswith('--'):
+                    continue
+
+                current_statement += line + "\n"
+
+                # Check for dollar quote start/end using regex to handle tagged quotes
+                dollar_matches = re.findall(r'\$(\w*)\$', line)
+                if dollar_matches and not in_single_quote:
+                    if not in_dollar_quote:
+                        # Starting dollar quote
+                        in_dollar_quote = True
+                        # First match is the opening tag
+                        dollar_tag = dollar_matches[0]
+                    else:
+                        # Check if any match closes our current dollar quote
+                        if dollar_tag in dollar_matches:
+                            in_dollar_quote = False
+                            dollar_tag = ""
+
+                # Check for single quote functions (AS 'function_body')
+                if not in_dollar_quote:
+                    if "AS '" in line and not in_single_quote:
+                        in_single_quote = True
+                    elif line.strip() == "';" and in_single_quote:
+                        in_single_quote = False
+
+                # If we hit a semicolon and we're not in any quote, end the statement
+                if line.endswith(';') and not in_dollar_quote and not in_single_quote:
+                    statements.append(current_statement.strip())
+                    current_statement = ""
+
+            # Add any remaining statement
+            if current_statement.strip():
+                statements.append(current_statement.strip())
+
+            # Execute each statement separately
+            for i, statement in enumerate(statements):
+                if statement:
+                    try:
+                        cursor.execute(statement)
+                        logger.debug(
+                            f"Executed statement {i+1}/{len(statements)}")
+                    except psycopg2.Error as e:
+                        logger.error(f"Failed to execute statement {i+1}: {e}")
+                        logger.error(
+                            f"Statement content: {statement[:200]}...")
+                        raise
+
             conn.commit()
 
         logger.info("Schema executed successfully")

@@ -114,7 +114,7 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 - `get_connection()`: Database connection factory
 - `DatabaseManager`: Context manager for connection lifecycle
 - `insert_teams()`, `insert_players()`: Upsert operations
-- `execute_schema()`: Schema management
+- `execute_schema()`: Enhanced schema management with proper SQL parsing
 
 **Design Decisions**:
 
@@ -123,6 +123,19 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 - Separate connection management from business logic
 - Batch operations for performance
 - Comprehensive error handling with rollback
+- **Enhanced SQL parsing**: Properly handles PostgreSQL functions with dollar-quoted strings
+
+**Schema Execution Improvements**:
+
+The `execute_schema()` function has been enhanced to properly handle complex PostgreSQL syntax:
+
+- **Statement-by-statement execution**: Splits SQL file into individual statements
+- **Dollar-quote awareness**: Correctly handles PostgreSQL function definitions with `$$` delimiters
+- **Function parsing**: Recognizes `CREATE OR REPLACE FUNCTION` blocks and executes them as complete units
+- **Error isolation**: Individual statement failures provide specific error context
+- **Syntax validation**: Built-in validation prevents common SQL syntax errors
+
+This resolves issues with executing schema files containing PostgreSQL functions that use dollar-quoted strings, which cannot be executed as a single large SQL statement.
 
 ### 6. Main Application (`src/app.py`)
 
