@@ -1,0 +1,46 @@
+# This YAML structure organizes the main publicly accessible Fantasy Premier League API endpoints, grouped by their function and usage.
+
+fpl_api_endpoints:
+  general_information:
+    - endpoint: /api/bootstrap-static/
+      description: Returns a summary of the season, including all teams, players, events (gameweeks), phases, element types (positions), and game settings.
+
+  fixtures_and_results:
+    - endpoint: /api/fixtures/
+      description: Provides all fixtures for the season, including teams involved, kickoff times, and difficulty ratings.
+    - endpoint: /api/fixture/{fixture_id}/
+      description: Detailed information about a specific fixture, including statistics and events.
+
+  players:
+    - endpoint: /api/element-summary/{element_id}/
+      description: Returns detailed data for a specific player, including their history, upcoming fixtures, and stats.
+
+  teams:
+    - endpoint: /api/teams/
+      description: Lists all Premier League teams for the current season.
+
+  managers:
+    - endpoint: /api/entry/{entry_id}/
+      description: Basic information about a user's team (entry).
+    - endpoint: /api/entry/{entry_id}/history/
+      description: Season history for a user's team.
+    - endpoint: /api/entry/{entry_id}/event/{event_id}/picks/
+      description: Team picks for a specific gameweek.
+    - endpoint: /api/entry/{entry_id}/transfers/
+      description: Transfer history for a user's team.
+
+  leagues:
+    - endpoint: /api/leagues-classic-standings/{league_id}/
+      description: Standings for a classic league.
+    - endpoint: /api/leagues-h2h-standings/{league_id}/
+      description: Standings for a head-to-head league.
+    - endpoint: /api/leagues-h2h/{league_id}/
+      description: Returns information about the H2H league, including standings, teams, and league details.
+    - endpoint: /api/leagues-h2h-matches/league/{league_id}/?page={page_number}
+      description: Provides a paginated list of all H2H matchups, results, and fixtures for the league.
+
+  additional:
+    - endpoint: /api/event/{event_id}/live/
+      description: Live data for a specific gameweek, including player scores and bonus points.
+    - endpoint: /api/game-settings/
+      description: Game rules and settings for the current season.
