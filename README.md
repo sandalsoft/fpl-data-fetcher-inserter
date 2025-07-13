@@ -1,10 +1,12 @@
 # FPL Data Fetcher & Inserter
 
-A robust Python application that fetches Fantasy Premier League (FPL) data from the official API and stores it in a PostgreSQL database. The system handles teams, players, gameweeks, and fixtures data with comprehensive error handling and flexible CLI options.
+A robust Python application that fetches Fantasy Premier League (FPL) data from the official API and stores it in a PostgreSQL database. The system now supports both a new normalized schema and legacy schema for backward compatibility, with comprehensive error handling and flexible CLI options.
 
 ## Features
 
+- **Dual Schema Support**: Choose between new normalized schema or legacy schema
 - **Complete FPL Data Pipeline**: Fetches, parses, and stores teams, players, gameweeks, and fixtures data
+- **Normalized Database Design**: Separate tables for events, players, player stats, and player history
 - **Robust Database Integration**: PostgreSQL with automatic schema creation and upsert operations
 - **Flexible CLI**: Control what data types to process with command-line flags
 - **Dry-Run Mode**: Preview operations without database changes
@@ -13,6 +15,25 @@ A robust Python application that fetches Fantasy Premier League (FPL) data from 
 - **Data Validation**: Pydantic models ensure data integrity
 - **Schema Validation**: Built-in SQL syntax validation and proper PostgreSQL function handling
 - **Extensible Architecture**: Modular design for easy feature additions
+- **Backwards Compatibility**: Legacy applications continue to work unchanged
+
+## Schema Options
+
+The application supports two database schemas:
+
+### New Schema (Default)
+A normalized structure with separate tables:
+- **events**: Simplified gameweek data (id, name, deadline_time, finished, average_entry_score)
+- **players**: Basic player information (id, code, first_name, second_name, team_id, element_type, now_cost)
+- **player_stats**: Player statistics per gameweek (player_id, gameweek_id, statistics...)
+- **player_history**: Historical player data per gameweek (player_id, gameweek_id, history...)
+
+### Legacy Schema
+The original schema with:
+- **teams**: Complete team information
+- **players**: Full player data including statistics
+- **gameweeks**: Complete gameweek information
+- **fixtures**: Match fixtures and results
 
 ## Data Processing
 
@@ -99,15 +120,22 @@ The application processes the following FPL data:
 ### Basic Usage
 
 ```bash
-# Fetch and insert all data (teams + players + gameweeks + fixtures)
+# Fetch and insert all data using new schema (default)
 python -m src.app
 
 # Preview what would be processed (dry-run mode)
 python -m src.app --dry-run
 
-# Process only specific data types
-python -m src.app --teams --players
-python -m src.app --gameweeks --fixtures
+# Use legacy schema
+python -m src.app --legacy
+
+# Process only specific data types (new schema)
+python -m src.app --events --players
+python -m src.app --player-stats --player-history
+
+# Process only specific data types (legacy schema)
+python -m src.app --teams --players --legacy
+python -m src.app --gameweeks --fixtures --legacy
 
 # Verbose output with configuration details
 python -m src.app --verbose --dry-run
@@ -115,15 +143,26 @@ python -m src.app --verbose --dry-run
 
 ### CLI Options
 
+#### Schema Selection
+- `--legacy`: Use legacy schema (teams, players, gameweeks, fixtures)
+
+#### New Schema Data Types
+- `--events`: Process events (gameweeks) data
+- `--players`: Process players data
+- `--player-stats`: Process player statistics data
+- `--player-history`: Process player history data
+
+#### Legacy Schema Data Types
+- `--teams`: Process teams data (legacy schema)
+- `--gameweeks`: Process gameweeks data (legacy schema)
+- `--fixtures`: Process fixtures data (legacy schema)
+
+#### General Options
 - `--dry-run`: Preview mode - fetch and parse data but skip database insertion
-- `--teams`: Process only teams data
-- `--players`: Process only players data
-- `--gameweeks`: Process only gameweeks data
-- `--fixtures`: Process only fixtures data
 - `--verbose, -v`: Enable verbose logging output
 - `--help, -h`: Show help message with examples
 
-**Note**: If no specific data type flags are provided, the application defaults to processing all data types (teams, players, gameweeks, and fixtures).
+**Note**: If no specific data type flags are provided, the application defaults to processing all available data types for the selected schema.
 
 ### Configuration
 
@@ -140,7 +179,16 @@ FPL_API_URL=https://fantasy.premierleague.com/api
 
 ## Database Schema
 
-The PostgreSQL schema includes:
+### New Schema (Default)
+The normalized PostgreSQL schema includes:
+
+- **events**: Simplified gameweek data (id, name, deadline_time, finished, average_entry_score)
+- **players**: Basic player information (id, code, first_name, second_name, team_id, element_type, now_cost)
+- **player_stats**: Player statistics per gameweek with foreign keys to players and events
+- **player_history**: Historical player data per gameweek for tracking changes over time
+
+### Legacy Schema
+The original PostgreSQL schema includes:
 
 - **teams**: Team information and statistics
 - **players**: Comprehensive player data with foreign key to teams

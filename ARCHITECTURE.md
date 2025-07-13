@@ -4,6 +4,8 @@
 
 The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based application that follows functional programming principles with dependency inversion and minimal complexity. The architecture emphasizes reliability, testability, and extensibility while maintaining a clean separation of concerns.
 
+The application now supports dual schema architectures: a new normalized schema (default) and a legacy schema for backward compatibility. This allows for gradual migration and ensures existing applications continue to work unchanged.
+
 ## System Architecture
 
 ```ascii
@@ -35,9 +37,15 @@ The FPL Data Fetcher & Inserter is designed as a modular, pipeline-based applica
 ┌─────────────────────────────────────────────────────────────────┐
 │                    PostgreSQL Database                          │
 │                                                                 │
-│   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐          │
-│   │  teams  │  │ players │  │gameweeks│  │fixtures │          │
-│   └─────────┘  └─────────┘  └─────────┘  └─────────┘          │
+│  New Schema (Default):                                          │
+│  ┌─────────┐  ┌─────────┐  ┌─────────────┐  ┌─────────────┐   │
+│  │ events  │  │ players │  │player_stats │  │player_history│   │
+│  └─────────┘  └─────────┘  └─────────────┘  └─────────────┘   │
+│                                                                 │
+│  Legacy Schema:                                                 │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐          │
+│  │  teams  │  │ players │  │gameweeks│  │fixtures │          │
+│  └─────────┘  └─────────┘  └─────────┘  └─────────┘          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -227,17 +235,87 @@ The `element_types` table is populated once by `schema.sql` as this data is stat
 
 ## Database Schema Design
 
-### Schema Principles
+The application supports two database schemas:
 
+### New Schema (Default)
+A normalized design that separates concerns for better scalability and performance.
+
+#### Schema Principles
+- **Normalized design** with proper foreign key relationships
+- **Separation of concerns** - base data vs. statistics vs. history
+- **Automatic timestamping** for audit trails
+- **Optimized indexes** for common query patterns
+- **Upsert operations** for data freshness
+
+#### Key Tables (New Schema)
+
+##### events
+```sql
+CREATE TABLE events (
+    id INTEGER PRIMARY KEY,           -- FPL event/gameweek ID
+    name TEXT NOT NULL,              -- Event name (e.g., "Gameweek 1")
+    deadline_time TIMESTAMP NOT NULL, -- Deadline for team changes
+    finished BOOLEAN NOT NULL,        -- Whether event is finished
+    average_entry_score INTEGER       -- Average score for this event
+);
+```
+
+##### players
+```sql
+CREATE TABLE players (
+    id INTEGER PRIMARY KEY,          -- FPL player ID
+    code INTEGER NOT NULL,           -- Player code
+    first_name TEXT NOT NULL,        -- Player first name
+    second_name TEXT NOT NULL,       -- Player second name
+    team_id INTEGER NOT NULL,        -- Team ID (foreign key)
+    element_type INTEGER NOT NULL,   -- Position (1=GK, 2=DEF, 3=MID, 4=FWD)
+    now_cost INTEGER NOT NULL        -- Current cost
+);
+```
+
+##### player_stats
+```sql
+CREATE TABLE player_stats (
+    stat_id SERIAL PRIMARY KEY,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    gameweek_id INTEGER NOT NULL,
+    -- Performance statistics
+    total_points INTEGER,
+    form REAL,
+    selected_by_percent REAL,
+    -- ... additional statistics
+    UNIQUE (player_id, gameweek_id)
+);
+```
+
+##### player_history
+```sql
+CREATE TABLE player_history (
+    history_id SERIAL PRIMARY KEY,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    gameweek_id INTEGER NOT NULL,
+    -- Historical data
+    opponent_team INTEGER,
+    was_home BOOLEAN,
+    kickoff_time TIMESTAMP,
+    -- ... additional history data
+    UNIQUE (player_id, gameweek_id)
+);
+```
+
+### Legacy Schema
+The original schema design for backward compatibility.
+
+#### Schema Principles
 - **Normalized design** with proper foreign key relationships
 - **Automatic timestamping** for audit trails
 - **Optimized indexes** for common query patterns
 - **JSONB fields** for complex nested data (fixture stats)
 - **Upsert operations** for data freshness
 
-### Key Tables
+#### Key Tables (Legacy Schema)
 
-#### teams
+##### teams
 
 ```sql
 CREATE TABLE teams (
@@ -250,7 +328,7 @@ CREATE TABLE teams (
 );
 ```
 
-#### players
+##### players
 
 ```sql
 CREATE TABLE players (
@@ -264,7 +342,7 @@ CREATE TABLE players (
 );
 ```
 
-#### gameweeks
+##### gameweeks
 
 ```sql
 CREATE TABLE gameweeks (

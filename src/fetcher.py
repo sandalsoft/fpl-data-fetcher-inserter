@@ -86,3 +86,45 @@ def fetch_bootstrap_data() -> Dict[str, Any]:
 def fetch_fixtures_data() -> Optional[List[Dict]]:
     """Fetches the fixtures data from FPL API."""
     return fetch_endpoint("/fixtures/")
+
+
+def fetch_player_history(player_id: int) -> Optional[List[Dict]]:
+    """Fetch player history data from FPL API.
+
+    Args:
+        player_id: The player's FPL ID
+
+    Returns:
+        List containing the player's history data
+
+    Raises:
+        FPLAPIError: If API request fails
+    """
+    endpoint = f"/element-summary/{player_id}/"
+    
+    try:
+        data = fetch_endpoint(endpoint)
+        # The API returns a dict with 'history' key containing the list of gameweek data
+        return data.get('history', [])
+    except FPLAPIError as e:
+        logger.error(f"Failed to fetch player history for player {player_id}: {e}")
+        return None
+
+
+def fetch_current_gameweek_id(bootstrap_data: Dict[str, Any]) -> Optional[int]:
+    """Get the current gameweek ID from bootstrap data.
+
+    Args:
+        bootstrap_data: The bootstrap-static JSON response
+
+    Returns:
+        Current gameweek ID or None if not found
+    """
+    if 'events' not in bootstrap_data:
+        return None
+    
+    for event in bootstrap_data['events']:
+        if event.get('is_current', False):
+            return event['id']
+    
+    return None

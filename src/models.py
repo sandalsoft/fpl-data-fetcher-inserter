@@ -3,6 +3,97 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class Event(BaseModel):
+    """Model for FPL event (gameweek) data."""
+    id: int
+    name: str
+    deadline_time: str  # ISO datetime string
+    finished: bool
+    average_entry_score: Optional[int] = None
+
+
+class Player(BaseModel):
+    """Model for FPL player data (simplified for new schema)."""
+    id: int
+    code: int
+    first_name: str
+    second_name: str
+    team_id: int  # Changed from 'team' to 'team_id' to match new schema
+    element_type: int  # Position type (1=GK, 2=DEF, 3=MID, 4=FWD)
+    now_cost: int  # Cost in FPL points (multiply by 0.1 for actual cost)
+
+
+class PlayerStats(BaseModel):
+    """Model for FPL player statistics data."""
+    player_id: int
+    gameweek_id: int
+    total_points: Optional[int] = None
+    form: Optional[float] = None
+    selected_by_percent: Optional[float] = None
+    transfers_in: Optional[int] = None
+    transfers_out: Optional[int] = None
+    minutes: Optional[int] = None
+    goals_scored: Optional[int] = None
+    assists: Optional[int] = None
+    clean_sheets: Optional[int] = None
+    goals_conceded: Optional[int] = None
+    own_goals: Optional[int] = None
+    penalties_saved: Optional[int] = None
+    penalties_missed: Optional[int] = None
+    yellow_cards: Optional[int] = None
+    red_cards: Optional[int] = None
+    saves: Optional[int] = None
+    bonus: Optional[int] = None
+    bps: Optional[int] = None
+    influence: Optional[float] = None
+    creativity: Optional[float] = None
+    threat: Optional[float] = None
+    ict_index: Optional[float] = None
+    starts: Optional[int] = None
+    expected_goals: Optional[float] = None
+    expected_assists: Optional[float] = None
+    expected_goal_involvements: Optional[float] = None
+    expected_goals_conceded: Optional[str] = None
+
+
+class PlayerHistory(BaseModel):
+    """Model for FPL player history data (per-gameweek)."""
+    player_id: int
+    gameweek_id: int
+    opponent_team: Optional[int] = None
+    was_home: Optional[bool] = None
+    kickoff_time: Optional[str] = None  # ISO datetime string
+    total_points: Optional[int] = None
+    value: Optional[int] = None  # Cost at that GW
+    selected: Optional[int] = None
+    transfers_balance: Optional[int] = None
+    transfers_in: Optional[int] = None
+    transfers_out: Optional[int] = None
+    minutes: Optional[int] = None
+    goals_scored: Optional[int] = None
+    assists: Optional[int] = None
+    clean_sheets: Optional[int] = None
+    goals_conceded: Optional[int] = None
+    own_goals: Optional[int] = None
+    penalties_saved: Optional[int] = None
+    penalties_missed: Optional[int] = None
+    yellow_cards: Optional[int] = None
+    red_cards: Optional[int] = None
+    saves: Optional[int] = None
+    bonus: Optional[int] = None
+    bps: Optional[int] = None
+    influence: Optional[float] = None
+    creativity: Optional[float] = None
+    threat: Optional[float] = None
+    ict_index: Optional[float] = None
+    starts: Optional[int] = None
+    expected_goals: Optional[float] = None
+    expected_assists: Optional[float] = None
+    expected_goal_involvements: Optional[float] = None
+    expected_goals_conceded: Optional[float] = None
+
+
+# Legacy models - keeping for backwards compatibility if needed
 class Team(BaseModel):
     """Model for FPL team data."""
     id: int
@@ -26,67 +117,6 @@ class Team(BaseModel):
     pulse_id: int
     form: Optional[str] = None
     team_division: Optional[str] = None
-
-
-class Player(BaseModel):
-    """Model for FPL player (element) data."""
-    id: int
-    first_name: str
-    second_name: str
-    web_name: str
-    team: int
-    team_code: int
-    element_type: int  # Position type (1=GK, 2=DEF, 3=MID, 4=FWD)
-    now_cost: int  # Cost in FPL points (multiply by 0.1 for actual cost)
-    total_points: int
-    status: str  # Player availability status
-    code: int
-
-    # Performance stats
-    minutes: int
-    goals_scored: int
-    assists: int
-    clean_sheets: int
-    goals_conceded: int
-    own_goals: int
-    penalties_saved: int
-    penalties_missed: int
-    yellow_cards: int
-    red_cards: int
-    saves: int
-    bonus: int
-
-    # Optional fields that might be null
-    form: str = "0.0"
-    points_per_game: str = "0.0"
-    selected_by_percent: str = "0.0"
-    transfers_in: int = 0
-    transfers_out: int = 0
-    transfers_in_event: int = 0
-    transfers_out_event: int = 0
-    event_points: int = 0
-    value_form: str = "0.0"
-    value_season: str = "0.0"
-
-    # Expected stats (stored as strings in API)
-    expected_goals: str = "0.00"
-    expected_assists: str = "0.00"
-    expected_goal_involvements: str = "0.00"
-    expected_goals_conceded: str = "0.00"
-
-    # ICT stats (stored as strings in API)
-    influence: str = "0.0"
-    creativity: str = "0.0"
-    threat: str = "0.0"
-    ict_index: str = "0.0"
-
-    # Nullable fields
-    chance_of_playing_this_round: Optional[int] = None
-    chance_of_playing_next_round: Optional[int] = None
-    news: Optional[str] = None
-    news_added: Optional[str] = None
-    squad_number: Optional[int] = None
-    photo: Optional[str] = None
 
 
 class Gameweek(BaseModel):

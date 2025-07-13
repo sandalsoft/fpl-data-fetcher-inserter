@@ -3,7 +3,7 @@ from psycopg2.extensions import connection
 from typing import Optional, List
 from .config import get_config
 from .utils import get_logger
-from .models import Team, Player, Gameweek, Fixture
+from .models import Event, Player, PlayerStats, PlayerHistory, Team, Gameweek, Fixture
 import re
 import json
 
@@ -159,6 +159,258 @@ def execute_schema(conn: connection, schema_file: str = "sql/schema.sql") -> Non
         raise
 
 
+# New functions for the updated schema
+def insert_events(conn: connection, events: List[Event]) -> None:
+    """Insert event data into the database.
+
+    Args:
+        conn: Database connection
+        events: List of Event objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not events:
+        logger.info("No events to insert")
+        return
+
+    logger.info(f"Inserting {len(events)} events into database")
+
+    insert_sql = """
+        INSERT INTO events (
+            id, name, deadline_time, finished, average_entry_score
+        ) VALUES (
+            %(id)s, %(name)s, %(deadline_time)s, %(finished)s, %(average_entry_score)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            deadline_time = EXCLUDED.deadline_time,
+            finished = EXCLUDED.finished,
+            average_entry_score = EXCLUDED.average_entry_score
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert Event objects to dictionaries for psycopg2
+            events_data = [event.model_dump() for event in events]
+            cursor.executemany(insert_sql, events_data)
+            conn.commit()
+
+        logger.info(f"Successfully inserted/updated {len(events)} events")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert events: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_players_new(conn: connection, players: List[Player]) -> None:
+    """Insert player data into the database (new schema).
+
+    Args:
+        conn: Database connection
+        players: List of Player objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not players:
+        logger.info("No players to insert")
+        return
+
+    logger.info(f"Inserting {len(players)} players into database")
+
+    insert_sql = """
+        INSERT INTO players (
+            id, code, first_name, second_name, team_id, element_type, now_cost
+        ) VALUES (
+            %(id)s, %(code)s, %(first_name)s, %(second_name)s, %(team_id)s, %(element_type)s, %(now_cost)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            code = EXCLUDED.code,
+            first_name = EXCLUDED.first_name,
+            second_name = EXCLUDED.second_name,
+            team_id = EXCLUDED.team_id,
+            element_type = EXCLUDED.element_type,
+            now_cost = EXCLUDED.now_cost
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert Player objects to dictionaries for psycopg2
+            players_data = [player.model_dump() for player in players]
+            cursor.executemany(insert_sql, players_data)
+            conn.commit()
+
+        logger.info(f"Successfully inserted/updated {len(players)} players")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert players: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_player_stats(conn: connection, player_stats: List[PlayerStats]) -> None:
+    """Insert player statistics data into the database.
+
+    Args:
+        conn: Database connection
+        player_stats: List of PlayerStats objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not player_stats:
+        logger.info("No player stats to insert")
+        return
+
+    logger.info(f"Inserting {len(player_stats)} player stats into database")
+
+    insert_sql = """
+        INSERT INTO player_stats (
+            player_id, gameweek_id, total_points, form, selected_by_percent,
+            transfers_in, transfers_out, minutes, goals_scored, assists,
+            clean_sheets, goals_conceded, own_goals, penalties_saved,
+            penalties_missed, yellow_cards, red_cards, saves, bonus, bps,
+            influence, creativity, threat, ict_index, starts, expected_goals,
+            expected_assists, expected_goal_involvements, expected_goals_conceded
+        ) VALUES (
+            %(player_id)s, %(gameweek_id)s, %(total_points)s, %(form)s, %(selected_by_percent)s,
+            %(transfers_in)s, %(transfers_out)s, %(minutes)s, %(goals_scored)s, %(assists)s,
+            %(clean_sheets)s, %(goals_conceded)s, %(own_goals)s, %(penalties_saved)s,
+            %(penalties_missed)s, %(yellow_cards)s, %(red_cards)s, %(saves)s, %(bonus)s, %(bps)s,
+            %(influence)s, %(creativity)s, %(threat)s, %(ict_index)s, %(starts)s, %(expected_goals)s,
+            %(expected_assists)s, %(expected_goal_involvements)s, %(expected_goals_conceded)s
+        )
+        ON CONFLICT (player_id, gameweek_id) DO UPDATE SET
+            total_points = EXCLUDED.total_points,
+            form = EXCLUDED.form,
+            selected_by_percent = EXCLUDED.selected_by_percent,
+            transfers_in = EXCLUDED.transfers_in,
+            transfers_out = EXCLUDED.transfers_out,
+            minutes = EXCLUDED.minutes,
+            goals_scored = EXCLUDED.goals_scored,
+            assists = EXCLUDED.assists,
+            clean_sheets = EXCLUDED.clean_sheets,
+            goals_conceded = EXCLUDED.goals_conceded,
+            own_goals = EXCLUDED.own_goals,
+            penalties_saved = EXCLUDED.penalties_saved,
+            penalties_missed = EXCLUDED.penalties_missed,
+            yellow_cards = EXCLUDED.yellow_cards,
+            red_cards = EXCLUDED.red_cards,
+            saves = EXCLUDED.saves,
+            bonus = EXCLUDED.bonus,
+            bps = EXCLUDED.bps,
+            influence = EXCLUDED.influence,
+            creativity = EXCLUDED.creativity,
+            threat = EXCLUDED.threat,
+            ict_index = EXCLUDED.ict_index,
+            starts = EXCLUDED.starts,
+            expected_goals = EXCLUDED.expected_goals,
+            expected_assists = EXCLUDED.expected_assists,
+            expected_goal_involvements = EXCLUDED.expected_goal_involvements,
+            expected_goals_conceded = EXCLUDED.expected_goals_conceded
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert PlayerStats objects to dictionaries for psycopg2
+            stats_data = [stats.model_dump() for stats in player_stats]
+            cursor.executemany(insert_sql, stats_data)
+            conn.commit()
+
+        logger.info(f"Successfully inserted/updated {len(player_stats)} player stats")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert player stats: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_player_history(conn: connection, player_history: List[PlayerHistory]) -> None:
+    """Insert player history data into the database.
+
+    Args:
+        conn: Database connection
+        player_history: List of PlayerHistory objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not player_history:
+        logger.info("No player history to insert")
+        return
+
+    logger.info(f"Inserting {len(player_history)} player history entries into database")
+
+    insert_sql = """
+        INSERT INTO player_history (
+            player_id, gameweek_id, opponent_team, was_home, kickoff_time,
+            total_points, value, selected, transfers_balance, transfers_in,
+            transfers_out, minutes, goals_scored, assists, clean_sheets,
+            goals_conceded, own_goals, penalties_saved, penalties_missed,
+            yellow_cards, red_cards, saves, bonus, bps, influence, creativity,
+            threat, ict_index, starts, expected_goals, expected_assists,
+            expected_goal_involvements, expected_goals_conceded
+        ) VALUES (
+            %(player_id)s, %(gameweek_id)s, %(opponent_team)s, %(was_home)s, %(kickoff_time)s,
+            %(total_points)s, %(value)s, %(selected)s, %(transfers_balance)s, %(transfers_in)s,
+            %(transfers_out)s, %(minutes)s, %(goals_scored)s, %(assists)s, %(clean_sheets)s,
+            %(goals_conceded)s, %(own_goals)s, %(penalties_saved)s, %(penalties_missed)s,
+            %(yellow_cards)s, %(red_cards)s, %(saves)s, %(bonus)s, %(bps)s, %(influence)s, %(creativity)s,
+            %(threat)s, %(ict_index)s, %(starts)s, %(expected_goals)s, %(expected_assists)s,
+            %(expected_goal_involvements)s, %(expected_goals_conceded)s
+        )
+        ON CONFLICT (player_id, gameweek_id) DO UPDATE SET
+            opponent_team = EXCLUDED.opponent_team,
+            was_home = EXCLUDED.was_home,
+            kickoff_time = EXCLUDED.kickoff_time,
+            total_points = EXCLUDED.total_points,
+            value = EXCLUDED.value,
+            selected = EXCLUDED.selected,
+            transfers_balance = EXCLUDED.transfers_balance,
+            transfers_in = EXCLUDED.transfers_in,
+            transfers_out = EXCLUDED.transfers_out,
+            minutes = EXCLUDED.minutes,
+            goals_scored = EXCLUDED.goals_scored,
+            assists = EXCLUDED.assists,
+            clean_sheets = EXCLUDED.clean_sheets,
+            goals_conceded = EXCLUDED.goals_conceded,
+            own_goals = EXCLUDED.own_goals,
+            penalties_saved = EXCLUDED.penalties_saved,
+            penalties_missed = EXCLUDED.penalties_missed,
+            yellow_cards = EXCLUDED.yellow_cards,
+            red_cards = EXCLUDED.red_cards,
+            saves = EXCLUDED.saves,
+            bonus = EXCLUDED.bonus,
+            bps = EXCLUDED.bps,
+            influence = EXCLUDED.influence,
+            creativity = EXCLUDED.creativity,
+            threat = EXCLUDED.threat,
+            ict_index = EXCLUDED.ict_index,
+            starts = EXCLUDED.starts,
+            expected_goals = EXCLUDED.expected_goals,
+            expected_assists = EXCLUDED.expected_assists,
+            expected_goal_involvements = EXCLUDED.expected_goal_involvements,
+            expected_goals_conceded = EXCLUDED.expected_goals_conceded
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert PlayerHistory objects to dictionaries for psycopg2
+            history_data = [history.model_dump() for history in player_history]
+            cursor.executemany(insert_sql, history_data)
+            conn.commit()
+
+        logger.info(f"Successfully inserted/updated {len(player_history)} player history entries")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert player history: {e}")
+        conn.rollback()
+        raise
+
+
+# Legacy functions - keeping for backwards compatibility
 def insert_teams(conn: connection, teams: List[Team]) -> None:
     """Insert team data into the database.
 
@@ -228,7 +480,7 @@ def insert_teams(conn: connection, teams: List[Team]) -> None:
 
 
 def insert_players(conn: connection, players: List[Player]) -> None:
-    """Insert player data into the database.
+    """Insert player data into the database (legacy function).
 
     Args:
         conn: Database connection
