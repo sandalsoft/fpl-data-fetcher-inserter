@@ -256,17 +256,25 @@ BEGIN
 END;
 ';
 
+DROP TRIGGER IF EXISTS update_teams_updated_at ON teams;
+
 CREATE TRIGGER update_teams_updated_at BEFORE
 UPDATE
     ON teams FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_players_updated_at ON players;
 
 CREATE TRIGGER update_players_updated_at BEFORE
 UPDATE
     ON players FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_fixtures_updated_at ON fixtures;
+
 CREATE TRIGGER update_fixtures_updated_at BEFORE
 UPDATE
     ON fixtures FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_gameweeks_updated_at ON gameweeks;
 
 CREATE TRIGGER update_gameweeks_updated_at BEFORE
 UPDATE

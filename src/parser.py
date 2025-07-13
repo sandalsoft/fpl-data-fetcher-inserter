@@ -68,6 +68,10 @@ def parse_players(data: Dict[str, Any]) -> List[Player]:
     players = []
 
     for player_data in players_data:
+        if player_data.get('element_type', 0) > 4:
+            logger.debug(
+                f"Skipping non-player element ID {player_data.get('id', 'unknown')}")
+            continue
         try:
             # Helper function to safely get string values
             def safe_str(value, default='0.0'):
@@ -187,6 +191,10 @@ def parse_player_stats(data: Dict[str, Any], gameweek_id: int) -> List[PlayerSta
     player_stats = []
 
     for player_data in players_data:
+        if player_data.get('element_type', 0) > 4:
+            logger.debug(
+                f"Skipping non-player element ID {player_data.get('id', 'unknown')}")
+            continue
         try:
             # Convert string values to appropriate types
             def safe_float(value):

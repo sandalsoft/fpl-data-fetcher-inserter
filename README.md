@@ -22,14 +22,18 @@ A robust Python application that fetches Fantasy Premier League (FPL) data from 
 The application supports two database schemas:
 
 ### New Schema (Default)
+
 A normalized structure with separate tables:
+
 - **events**: Simplified gameweek data (id, name, deadline_time, finished, average_entry_score)
 - **players**: Basic player information (id, code, first_name, second_name, team_id, element_type, now_cost)
 - **player_stats**: Player statistics per gameweek (player_id, gameweek_id, statistics...)
 - **player_history**: Historical player data per gameweek (player_id, gameweek_id, history...)
 
 ### Legacy Schema
+
 The original schema with:
+
 - **teams**: Complete team information
 - **players**: Full player data including statistics
 - **gameweeks**: Complete gameweek information
@@ -144,20 +148,24 @@ python -m src.app --verbose --dry-run
 ### CLI Options
 
 #### Schema Selection
+
 - `--legacy`: Use legacy schema (teams, players, gameweeks, fixtures)
 
 #### New Schema Data Types
+
 - `--events`: Process events (gameweeks) data
 - `--players`: Process players data
 - `--player-stats`: Process player statistics data
 - `--player-history`: Process player history data
 
 #### Legacy Schema Data Types
+
 - `--teams`: Process teams data (legacy schema)
 - `--gameweeks`: Process gameweeks data (legacy schema)
 - `--fixtures`: Process fixtures data (legacy schema)
 
 #### General Options
+
 - `--dry-run`: Preview mode - fetch and parse data but skip database insertion
 - `--verbose, -v`: Enable verbose logging output
 - `--help, -h`: Show help message with examples
@@ -180,6 +188,7 @@ FPL_API_URL=https://fantasy.premierleague.com/api
 ## Database Schema
 
 ### New Schema (Default)
+
 The normalized PostgreSQL schema includes:
 
 - **events**: Simplified gameweek data (id, name, deadline_time, finished, average_entry_score)
@@ -188,6 +197,7 @@ The normalized PostgreSQL schema includes:
 - **player_history**: Historical player data per gameweek for tracking changes over time
 
 ### Legacy Schema
+
 The original PostgreSQL schema includes:
 
 - **teams**: Team information and statistics
@@ -328,3 +338,38 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Fantasy Premier League for providing the public API
 - The Python community for excellent data processing libraries
+
+## Using Pydantic Models
+
+The application uses Pydantic models for data validation and structuring. Here are some examples of how to use them:
+
+```python
+from src.models import Player
+
+# Create a Player instance
+player_data = {
+    'id': 1,
+    'code': 123,
+    'first_name': 'John',
+    'second_name': 'Doe',
+    'web_name': 'Doe',
+    'team': 1,
+    'team_code': 3,
+    'element_type': 3,
+    'now_cost': 50,
+    'status': 'a'
+}
+player = Player(**player_data)
+print(player)
+```
+
+Invalid data will raise a ValidationError:
+
+```python
+try:
+    invalid_player = Player(id=0, first_name='')
+except ValidationError as e:
+    print(e)
+```
+
+Similar usage applies to other models like Event, PlayerStats, etc.

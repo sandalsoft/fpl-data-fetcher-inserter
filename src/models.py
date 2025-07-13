@@ -1,6 +1,6 @@
 from typing import Optional, List, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Event(BaseModel):
@@ -14,61 +14,70 @@ class Event(BaseModel):
 
 class Player(BaseModel):
     """Model for FPL player data (simplified for new schema)."""
-    id: int
-    code: int
-    first_name: str
-    second_name: str
-    web_name: str
-    team: int  # Foreign key to teams table - matches schema
-    team_code: int
-    element_type: int  # Position type (1=GK, 2=DEF, 3=MID, 4=FWD)
-    now_cost: int  # Cost in FPL points (multiply by 0.1 for actual cost)
-    total_points: int = 0
-    status: str = 'a'  # Player availability status
-    
+    id: int = Field(..., gt=0)
+    code: int = Field(..., ge=0)
+    first_name: str = Field(..., min_length=1)
+    second_name: str = Field(..., min_length=1)
+    web_name: str = Field(..., min_length=1)
+    team: int = Field(..., gt=0)  # Foreign key to teams table - matches schema
+    team_code: int = Field(..., ge=0)
+    # Position type (1=GK, 2=DEF, 3=MID, 4=FWD)
+    element_type: int = Field(..., ge=1, le=4)
+    # Cost in FPL points (multiply by 0.1 for actual cost)
+    now_cost: int = Field(..., gt=0)
+    total_points: int = Field(default=0)
+    status: str = Field(default='a')  # Player availability status
+
     # Performance stats with defaults to match schema
-    minutes: int = 0
-    goals_scored: int = 0
-    assists: int = 0
-    clean_sheets: int = 0
-    goals_conceded: int = 0
-    own_goals: int = 0
-    penalties_saved: int = 0
-    penalties_missed: int = 0
-    yellow_cards: int = 0
-    red_cards: int = 0
-    saves: int = 0
-    bonus: int = 0
-    
+    minutes: int = Field(default=0, ge=0)
+    goals_scored: int = Field(default=0, ge=0)
+    assists: int = Field(default=0, ge=0)
+    clean_sheets: int = Field(default=0, ge=0)
+    goals_conceded: int = Field(default=0, ge=0)
+    own_goals: int = Field(default=0, ge=0)
+    penalties_saved: int = Field(default=0, ge=0)
+    penalties_missed: int = Field(default=0, ge=0)
+    yellow_cards: int = Field(default=0, ge=0)
+    red_cards: int = Field(default=0, ge=0)
+    saves: int = Field(default=0, ge=0)
+    bonus: int = Field(default=0, ge=0)
+
     # String-based stats (stored as strings in API) with defaults
-    form: str = '0.0'
-    points_per_game: str = '0.0'
-    selected_by_percent: str = '0.0'
-    value_form: str = '0.0'
-    value_season: str = '0.0'
-    expected_goals: str = '0.00'
-    expected_assists: str = '0.00'
-    expected_goal_involvements: str = '0.00'
-    expected_goals_conceded: str = '0.00'
-    influence: str = '0.0'
-    creativity: str = '0.0'
-    threat: str = '0.0'
-    ict_index: str = '0.0'
-    
+    form: str = Field(default='0.0')
+    points_per_game: str = Field(default='0.0')
+    selected_by_percent: str = Field(default='0.0')
+    value_form: str = Field(default='0.0')
+    value_season: str = Field(default='0.0')
+    expected_goals: str = Field(default='0.00')
+    expected_assists: str = Field(default='0.00')
+    expected_goal_involvements: str = Field(default='0.00')
+    expected_goals_conceded: str = Field(default='0.00')
+    influence: str = Field(default='0.0')
+    creativity: str = Field(default='0.0')
+    threat: str = Field(default='0.0')
+    ict_index: str = Field(default='0.0')
+
     # Transfer stats
-    transfers_in: int = 0
-    transfers_out: int = 0
-    transfers_in_event: int = 0
-    transfers_out_event: int = 0
-    event_points: int = 0
-    
+    transfers_in: int = Field(default=0, ge=0)
+    transfers_out: int = Field(default=0, ge=0)
+    transfers_in_event: int = Field(default=0, ge=0)
+    transfers_out_event: int = Field(default=0, ge=0)
+    event_points: int = Field(default=0)
+
     # Optional nullable fields
-    chance_of_playing_this_round: Optional[int] = None
-    chance_of_playing_next_round: Optional[int] = None
+    chance_of_playing_this_round: Optional[int] = Field(None, ge=0, le=100)
+    chance_of_playing_next_round: Optional[int] = Field(None, ge=0, le=100)
     news: Optional[str] = None
     news_added: Optional[str] = None  # ISO datetime string
-    squad_number: Optional[int] = None
+    squad_number: Optional[int] = Field(None, ge=0)
     photo: Optional[str] = None
+
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v):
+        if v not in ['a', 'd', 'i', 's', 'u', 'n']:
+            raise ValueError(f"Invalid player status: {v}")
+        return v
 
 
 class PlayerStats(BaseModel):
@@ -111,10 +120,10 @@ class PlayerHistory(BaseModel):
     opponent_team: Optional[int] = None
     was_home: Optional[bool] = None
     kickoff_time: Optional[str] = None  # ISO datetime string
-    total_points: Optional[int] = None
+    total_points: Optional[int] = Field(None)
     value: Optional[int] = None  # Cost at that GW
     selected: Optional[int] = None
-    transfers_balance: Optional[int] = None
+    transfers_balance: Optional[int] = Field(None)
     transfers_in: Optional[int] = None
     transfers_out: Optional[int] = None
     minutes: Optional[int] = None
