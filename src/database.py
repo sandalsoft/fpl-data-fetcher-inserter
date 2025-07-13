@@ -3,9 +3,19 @@ from psycopg2.extensions import connection
 from typing import Optional, List
 from .config import get_config
 from .utils import get_logger
-from .models import Event, Player, PlayerStats, PlayerHistory, Team, Gameweek, Fixture
+from .models import (
+    Event, Player, PlayerStats, PlayerHistory, Team, Gameweek, Fixture,
+    GameweekLiveData, GameweekLivePlayer, ManagerData, LeagueCupStatus,
+    EntryData, H2HMatchData, H2HMatch, LeagueStandings
+)
 import re
 import json
+import time
+from io import StringIO
+from typing import List, Dict, Any, Optional
+import psycopg2
+from psycopg2.extensions import connection
+from psycopg2.extras import RealDictCursor
 
 logger = get_logger(__name__)
 
@@ -174,7 +184,8 @@ def insert_events(conn: connection, events: List[Event]) -> None:
         logger.info("No events to insert")
         return
 
-    logger.info(f"Inserting {len(events)} events into database")
+    start_time = time.time()
+    logger.info(f"🏗️ Starting database insert: {len(events)} events")
 
     insert_sql = """
         INSERT INTO events (
@@ -196,7 +207,11 @@ def insert_events(conn: connection, events: List[Event]) -> None:
             cursor.executemany(insert_sql, events_data)
             conn.commit()
 
-        logger.info(f"Successfully inserted/updated {len(events)} events")
+        duration = time.time() - start_time
+        logger.info(
+            f"✅ Database insert completed: {len(events)} events in {duration:.2f} seconds")
+        logger.info(
+            f"📊 Events insert rate: {len(events)/duration:.1f} records/second")
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert events: {e}")
@@ -218,7 +233,8 @@ def insert_teams_new(conn: connection, teams: List[Team]) -> None:
         logger.info("No teams to insert")
         return
 
-    logger.info(f"Inserting {len(teams)} teams into database")
+    start_time = time.time()
+    logger.info(f"🏗️ Starting database insert: {len(teams)} teams")
 
     insert_sql = """
         INSERT INTO teams (
@@ -291,7 +307,11 @@ def insert_teams_new(conn: connection, teams: List[Team]) -> None:
 
             conn.commit()
 
-        logger.info(f"Successfully inserted/updated {len(teams)} teams")
+        duration = time.time() - start_time
+        logger.info(
+            f"✅ Database insert completed: {len(teams)} teams in {duration:.2f} seconds")
+        logger.info(
+            f"📊 Teams insert rate: {len(teams)/duration:.1f} records/second")
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert teams: {e}")
@@ -427,7 +447,8 @@ def insert_players_new(conn: connection, players: List[Player]) -> None:
         logger.info("No players to insert")
         return
 
-    logger.info(f"Inserting {len(players)} players into database")
+    start_time = time.time()
+    logger.info(f"🏗️ Starting database insert: {len(players)} players")
 
     insert_sql = """
         INSERT INTO players (
@@ -540,7 +561,11 @@ def insert_players_new(conn: connection, players: List[Player]) -> None:
 
             conn.commit()
 
-        logger.info(f"Successfully inserted/updated {len(players)} players")
+        duration = time.time() - start_time
+        logger.info(
+            f"✅ Database insert completed: {len(players)} players in {duration:.2f} seconds")
+        logger.info(
+            f"📊 Players insert rate: {len(players)/duration:.1f} records/second")
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert players: {e}")
@@ -566,7 +591,9 @@ def insert_player_stats(conn: connection, player_stats: List[PlayerStats]) -> No
         logger.info("No player stats to insert")
         return
 
-    logger.info(f"Inserting {len(player_stats)} player stats into database")
+    start_time = time.time()
+    logger.info(
+        f"🏗️ Starting database insert: {len(player_stats)} player stats")
 
     insert_sql = """
         INSERT INTO player_stats (
@@ -649,8 +676,11 @@ def insert_player_stats(conn: connection, player_stats: List[PlayerStats]) -> No
 
             conn.commit()
 
+        duration = time.time() - start_time
         logger.info(
-            f"Successfully inserted/updated {len(player_stats)} player stats")
+            f"✅ Database insert completed: {len(player_stats)} player stats in {duration:.2f} seconds")
+        logger.info(
+            f"📊 Player stats insert rate: {len(player_stats)/duration:.1f} records/second")
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert player stats: {e}")
@@ -658,6 +688,230 @@ def insert_player_stats(conn: connection, player_stats: List[PlayerStats]) -> No
         raise
     except Exception as e:
         logger.error(f"Unexpected error inserting player stats: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_player_history_optimized(conn: connection, player_history: List[PlayerHistory]) -> None:
+    """Insert player history data into the database using optimized bulk operations.
+
+    Args:
+        conn: Database connection
+        player_history: List of PlayerHistory objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not player_history:
+        logger.info("No player history to insert")
+        return
+
+    start_time = time.time()
+    logger.info(
+        f"Inserting {len(player_history)} player history entries using optimized method")
+
+    # Apply connection optimizations for bulk operations
+    from .config import get_config
+    config = get_config()
+
+    if config.get('enable_db_optimizations', True):
+        optimize_connection_for_bulk_operations(conn)
+
+    try:
+        with conn.cursor() as cursor:
+            # Step 1: Create temporary table for staging data
+            temp_table_sql = """
+                CREATE TEMPORARY TABLE temp_player_history (
+                    player_id INTEGER,
+                    gameweek_id INTEGER,
+                    opponent_team INTEGER,
+                    was_home BOOLEAN,
+                    kickoff_time TIMESTAMP,
+                    total_points INTEGER,
+                    value INTEGER,
+                    selected INTEGER,
+                    transfers_balance INTEGER,
+                    transfers_in INTEGER,
+                    transfers_out INTEGER,
+                    minutes INTEGER,
+                    goals_scored INTEGER,
+                    assists INTEGER,
+                    clean_sheets INTEGER,
+                    goals_conceded INTEGER,
+                    own_goals INTEGER,
+                    penalties_saved INTEGER,
+                    penalties_missed INTEGER,
+                    yellow_cards INTEGER,
+                    red_cards INTEGER,
+                    saves INTEGER,
+                    bonus INTEGER,
+                    bps INTEGER,
+                    influence REAL,
+                    creativity REAL,
+                    threat REAL,
+                    ict_index REAL,
+                    starts INTEGER,
+                    expected_goals REAL,
+                    expected_assists REAL,
+                    expected_goal_involvements REAL,
+                    expected_goals_conceded REAL
+                )
+            """
+            cursor.execute(temp_table_sql)
+            logger.debug("Created temporary staging table")
+
+            # Step 2: Prepare data for COPY operation
+            copy_data = StringIO()
+            field_count = 33  # Number of fields in temp table
+
+            for history in player_history:
+                # Convert PlayerHistory to row data, handling None values
+                row_data = [
+                    str(history.player_id) if history.player_id is not None else '\\N',
+                    str(history.gameweek_id) if history.gameweek_id is not None else '\\N',
+                    str(history.opponent_team) if history.opponent_team is not None else '\\N',
+                    'true' if history.was_home is True else 'false' if history.was_home is False else '\\N',
+                    str(history.kickoff_time) if history.kickoff_time is not None else '\\N',
+                    str(history.total_points) if history.total_points is not None else '\\N',
+                    str(history.value) if history.value is not None else '\\N',
+                    str(history.selected) if history.selected is not None else '\\N',
+                    str(history.transfers_balance) if history.transfers_balance is not None else '\\N',
+                    str(history.transfers_in) if history.transfers_in is not None else '\\N',
+                    str(history.transfers_out) if history.transfers_out is not None else '\\N',
+                    str(history.minutes) if history.minutes is not None else '\\N',
+                    str(history.goals_scored) if history.goals_scored is not None else '\\N',
+                    str(history.assists) if history.assists is not None else '\\N',
+                    str(history.clean_sheets) if history.clean_sheets is not None else '\\N',
+                    str(history.goals_conceded) if history.goals_conceded is not None else '\\N',
+                    str(history.own_goals) if history.own_goals is not None else '\\N',
+                    str(history.penalties_saved) if history.penalties_saved is not None else '\\N',
+                    str(history.penalties_missed) if history.penalties_missed is not None else '\\N',
+                    str(history.yellow_cards) if history.yellow_cards is not None else '\\N',
+                    str(history.red_cards) if history.red_cards is not None else '\\N',
+                    str(history.saves) if history.saves is not None else '\\N',
+                    str(history.bonus) if history.bonus is not None else '\\N',
+                    str(history.bps) if history.bps is not None else '\\N',
+                    str(history.influence) if history.influence is not None else '\\N',
+                    str(history.creativity) if history.creativity is not None else '\\N',
+                    str(history.threat) if history.threat is not None else '\\N',
+                    str(history.ict_index) if history.ict_index is not None else '\\N',
+                    str(history.starts) if history.starts is not None else '\\N',
+                    str(history.expected_goals) if history.expected_goals is not None else '\\N',
+                    str(history.expected_assists) if history.expected_assists is not None else '\\N',
+                    str(history.expected_goal_involvements) if history.expected_goal_involvements is not None else '\\N',
+                    str(history.expected_goals_conceded) if history.expected_goals_conceded is not None else '\\N'
+                ]
+                copy_data.write('\t'.join(row_data) + '\n')
+
+            copy_data.seek(0)
+
+            # Step 3: Use COPY to bulk load data into temporary table
+            copy_start = time.time()
+            cursor.copy_from(
+                copy_data,
+                'temp_player_history',
+                columns=[
+                    'player_id', 'gameweek_id', 'opponent_team', 'was_home', 'kickoff_time',
+                    'total_points', 'value', 'selected', 'transfers_balance', 'transfers_in',
+                    'transfers_out', 'minutes', 'goals_scored', 'assists', 'clean_sheets',
+                    'goals_conceded', 'own_goals', 'penalties_saved', 'penalties_missed',
+                    'yellow_cards', 'red_cards', 'saves', 'bonus', 'bps', 'influence', 'creativity',
+                    'threat', 'ict_index', 'starts', 'expected_goals', 'expected_assists',
+                    'expected_goal_involvements', 'expected_goals_conceded'
+                ]
+            )
+            copy_time = time.time() - copy_start
+            logger.debug(
+                f"COPY operation completed in {copy_time:.2f} seconds")
+
+            # Step 4: Perform efficient upsert from temporary table
+            upsert_start = time.time()
+            upsert_sql = """
+                INSERT INTO player_history (
+                    player_id, gameweek_id, opponent_team, was_home, kickoff_time,
+                    total_points, value, selected, transfers_balance, transfers_in,
+                    transfers_out, minutes, goals_scored, assists, clean_sheets,
+                    goals_conceded, own_goals, penalties_saved, penalties_missed,
+                    yellow_cards, red_cards, saves, bonus, bps, influence, creativity,
+                    threat, ict_index, starts, expected_goals, expected_assists,
+                    expected_goal_involvements, expected_goals_conceded
+                )
+                SELECT 
+                    player_id, gameweek_id, opponent_team, was_home, kickoff_time,
+                    total_points, value, selected, transfers_balance, transfers_in,
+                    transfers_out, minutes, goals_scored, assists, clean_sheets,
+                    goals_conceded, own_goals, penalties_saved, penalties_missed,
+                    yellow_cards, red_cards, saves, bonus, bps, influence, creativity,
+                    threat, ict_index, starts, expected_goals, expected_assists,
+                    expected_goal_involvements, expected_goals_conceded
+                FROM temp_player_history
+                ON CONFLICT (player_id, gameweek_id) DO UPDATE SET
+                    opponent_team = EXCLUDED.opponent_team,
+                    was_home = EXCLUDED.was_home,
+                    kickoff_time = EXCLUDED.kickoff_time,
+                    total_points = EXCLUDED.total_points,
+                    value = EXCLUDED.value,
+                    selected = EXCLUDED.selected,
+                    transfers_balance = EXCLUDED.transfers_balance,
+                    transfers_in = EXCLUDED.transfers_in,
+                    transfers_out = EXCLUDED.transfers_out,
+                    minutes = EXCLUDED.minutes,
+                    goals_scored = EXCLUDED.goals_scored,
+                    assists = EXCLUDED.assists,
+                    clean_sheets = EXCLUDED.clean_sheets,
+                    goals_conceded = EXCLUDED.goals_conceded,
+                    own_goals = EXCLUDED.own_goals,
+                    penalties_saved = EXCLUDED.penalties_saved,
+                    penalties_missed = EXCLUDED.penalties_missed,
+                    yellow_cards = EXCLUDED.yellow_cards,
+                    red_cards = EXCLUDED.red_cards,
+                    saves = EXCLUDED.saves,
+                    bonus = EXCLUDED.bonus,
+                    bps = EXCLUDED.bps,
+                    influence = EXCLUDED.influence,
+                    creativity = EXCLUDED.creativity,
+                    threat = EXCLUDED.threat,
+                    ict_index = EXCLUDED.ict_index,
+                    starts = EXCLUDED.starts,
+                    expected_goals = EXCLUDED.expected_goals,
+                    expected_assists = EXCLUDED.expected_assists,
+                    expected_goal_involvements = EXCLUDED.expected_goal_involvements,
+                    expected_goals_conceded = EXCLUDED.expected_goals_conceded
+            """
+
+            cursor.execute(upsert_sql)
+            upsert_time = time.time() - upsert_start
+            logger.debug(
+                f"Upsert operation completed in {upsert_time:.2f} seconds")
+
+            # Step 5: Get row count and commit
+            cursor.execute("SELECT COUNT(*) FROM temp_player_history")
+            processed_count = cursor.fetchone()[0]
+
+            conn.commit()
+
+            total_time = time.time() - start_time
+            logger.info(
+                f"Successfully inserted/updated {processed_count} player history entries")
+            logger.info(
+                f"Total operation time: {total_time:.2f}s (COPY: {copy_time:.2f}s, Upsert: {upsert_time:.2f}s)")
+            logger.info(
+                f"Performance: {processed_count/total_time:.0f} records/second")
+
+            # Optimize table for future queries after bulk insert
+            if (config.get('enable_vacuum_after_bulk', True) and
+                    processed_count > config.get('vacuum_threshold', 1000)):
+                logger.info(
+                    "Running VACUUM ANALYZE to optimize table for queries")
+                vacuum_analyze_table(conn, "player_history")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert player history (optimized): {e}")
+        conn.rollback()
+        raise
+    except Exception as e:
+        logger.error(
+            f"Unexpected error inserting player history (optimized): {e}")
         conn.rollback()
         raise
 
@@ -676,6 +930,33 @@ def insert_player_history(conn: connection, player_history: List[PlayerHistory])
         logger.info("No player history to insert")
         return
 
+    from .config import get_config
+    config = get_config()
+
+    # Use optimized version for large datasets based on configuration
+    threshold = config.get('bulk_insert_threshold', 100)
+    if len(player_history) > threshold:
+        logger.info(
+            f"Using optimized insertion for {len(player_history)} records (threshold: {threshold})")
+        insert_player_history_optimized(conn, player_history)
+        return
+
+    # Fallback to original method for smaller datasets
+    logger.info(
+        f"Using standard insertion for {len(player_history)} records (threshold: {threshold})")
+    insert_player_history_standard(conn, player_history)
+
+
+def insert_player_history_standard(conn: connection, player_history: List[PlayerHistory]) -> None:
+    """Insert player history data using the original method (renamed for fallback).
+
+    Args:
+        conn: Database connection
+        player_history: List of PlayerHistory objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
     logger.info(
         f"Inserting {len(player_history)} player history entries into database")
 
@@ -1103,6 +1384,662 @@ def insert_fixtures(conn: connection, fixtures: List[Fixture]) -> None:
         logger.error(f"Failed to insert fixtures: {e}")
         conn.rollback()
         raise
+
+
+def insert_gameweek_live_data(conn: connection, live_data: GameweekLiveData, gameweek_id: int) -> None:
+    """Insert gameweek live data into the database.
+
+    Args:
+        conn: Database connection
+        live_data: GameweekLiveData object to insert
+        gameweek_id: The gameweek ID for this live data
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not live_data.elements:
+        logger.info("No live data elements to insert")
+        return
+
+    logger.info(
+        f"Inserting {len(live_data.elements)} live data elements for gameweek {gameweek_id}")
+
+    # Create table if it doesn't exist
+    create_table_sql = """
+        CREATE TABLE IF NOT EXISTS gameweek_live_data (
+            id SERIAL PRIMARY KEY,
+            gameweek_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            goals_scored INTEGER,
+            assists INTEGER,
+            own_goals INTEGER,
+            penalties_saved INTEGER,
+            penalties_missed INTEGER,
+            yellow_cards INTEGER,
+            red_cards INTEGER,
+            saves INTEGER,
+            bonus INTEGER,
+            bps INTEGER,
+            influence FLOAT,
+            creativity FLOAT,
+            threat FLOAT,
+            ict_index FLOAT,
+            total_points INTEGER,
+            in_dreamteam BOOLEAN,
+            minutes INTEGER,
+            explain_data JSONB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(gameweek_id, player_id)
+        );
+    """
+
+    insert_sql = """
+        INSERT INTO gameweek_live_data (
+            gameweek_id, player_id, goals_scored, assists, own_goals, penalties_saved,
+            penalties_missed, yellow_cards, red_cards, saves, bonus, bps, influence,
+            creativity, threat, ict_index, total_points, in_dreamteam, minutes, explain_data
+        ) VALUES (
+            %(gameweek_id)s, %(player_id)s, %(goals_scored)s, %(assists)s, %(own_goals)s, %(penalties_saved)s,
+            %(penalties_missed)s, %(yellow_cards)s, %(red_cards)s, %(saves)s, %(bonus)s, %(bps)s, %(influence)s,
+            %(creativity)s, %(threat)s, %(ict_index)s, %(total_points)s, %(in_dreamteam)s, %(minutes)s, %(explain_data)s
+        )
+        ON CONFLICT (gameweek_id, player_id) DO UPDATE SET
+            goals_scored = EXCLUDED.goals_scored,
+            assists = EXCLUDED.assists,
+            own_goals = EXCLUDED.own_goals,
+            penalties_saved = EXCLUDED.penalties_saved,
+            penalties_missed = EXCLUDED.penalties_missed,
+            yellow_cards = EXCLUDED.yellow_cards,
+            red_cards = EXCLUDED.red_cards,
+            saves = EXCLUDED.saves,
+            bonus = EXCLUDED.bonus,
+            bps = EXCLUDED.bps,
+            influence = EXCLUDED.influence,
+            creativity = EXCLUDED.creativity,
+            threat = EXCLUDED.threat,
+            ict_index = EXCLUDED.ict_index,
+            total_points = EXCLUDED.total_points,
+            in_dreamteam = EXCLUDED.in_dreamteam,
+            minutes = EXCLUDED.minutes,
+            explain_data = EXCLUDED.explain_data
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Create table
+            cursor.execute(create_table_sql)
+
+            # Prepare data
+            live_data_records = []
+            for element in live_data.elements:
+                record = {
+                    'gameweek_id': gameweek_id,
+                    'player_id': element.id,
+                    'goals_scored': element.stats.goals_scored,
+                    'assists': element.stats.assists,
+                    'own_goals': element.stats.own_goals,
+                    'penalties_saved': element.stats.penalties_saved,
+                    'penalties_missed': element.stats.penalties_missed,
+                    'yellow_cards': element.stats.yellow_cards,
+                    'red_cards': element.stats.red_cards,
+                    'saves': element.stats.saves,
+                    'bonus': element.stats.bonus,
+                    'bps': element.stats.bps,
+                    'influence': element.stats.influence,
+                    'creativity': element.stats.creativity,
+                    'threat': element.stats.threat,
+                    'ict_index': element.stats.ict_index,
+                    'total_points': element.stats.total_points,
+                    'in_dreamteam': element.stats.in_dreamteam,
+                    'minutes': element.stats.minutes,
+                    'explain_data': json.dumps([explain.model_dump() for explain in element.explain])
+                }
+                live_data_records.append(record)
+
+            cursor.executemany(insert_sql, live_data_records)
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated {len(live_data_records)} live data records")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert live data: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_manager_data(conn: connection, manager_data: ManagerData) -> None:
+    """Insert manager data into the database.
+
+    Args:
+        conn: Database connection
+        manager_data: ManagerData object to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    logger.info(
+        f"Inserting manager data for {manager_data.player_first_name} {manager_data.player_last_name}")
+
+    # Create table if it doesn't exist
+    create_table_sql = """
+        CREATE TABLE IF NOT EXISTS manager_data (
+            id INTEGER PRIMARY KEY,
+            entry_id INTEGER NOT NULL,
+            player_first_name VARCHAR(100) NOT NULL,
+            player_last_name VARCHAR(100) NOT NULL,
+            player_region_id INTEGER,
+            player_region_name VARCHAR(100),
+            player_region_iso_code_short VARCHAR(10),
+            player_region_iso_code_long VARCHAR(10),
+            summary_overall_points INTEGER,
+            summary_overall_rank INTEGER,
+            summary_event_points INTEGER,
+            summary_event_rank INTEGER,
+            joined_time TIMESTAMP,
+            current_event INTEGER,
+            total_transfers INTEGER,
+            total_loans INTEGER,
+            total_loans_active INTEGER,
+            transfers_or_loans VARCHAR(50),
+            deleted BOOLEAN DEFAULT FALSE,
+            email VARCHAR(255),
+            entry_email VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """
+
+    insert_sql = """
+        INSERT INTO manager_data (
+            id, entry_id, player_first_name, player_last_name, player_region_id, player_region_name,
+            player_region_iso_code_short, player_region_iso_code_long, summary_overall_points,
+            summary_overall_rank, summary_event_points, summary_event_rank, joined_time, current_event,
+            total_transfers, total_loans, total_loans_active, transfers_or_loans, deleted, email, entry_email
+        ) VALUES (
+            %(id)s, %(entry)s, %(player_first_name)s, %(player_last_name)s, %(player_region_id)s, %(player_region_name)s,
+            %(player_region_iso_code_short)s, %(player_region_iso_code_long)s, %(summary_overall_points)s,
+            %(summary_overall_rank)s, %(summary_event_points)s, %(summary_event_rank)s, %(joined_time)s, %(current_event)s,
+            %(total_transfers)s, %(total_loans)s, %(total_loans_active)s, %(transfers_or_loans)s, %(deleted)s, %(email)s, %(entry_email)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            entry_id = EXCLUDED.entry_id,
+            player_first_name = EXCLUDED.player_first_name,
+            player_last_name = EXCLUDED.player_last_name,
+            player_region_id = EXCLUDED.player_region_id,
+            player_region_name = EXCLUDED.player_region_name,
+            player_region_iso_code_short = EXCLUDED.player_region_iso_code_short,
+            player_region_iso_code_long = EXCLUDED.player_region_iso_code_long,
+            summary_overall_points = EXCLUDED.summary_overall_points,
+            summary_overall_rank = EXCLUDED.summary_overall_rank,
+            summary_event_points = EXCLUDED.summary_event_points,
+            summary_event_rank = EXCLUDED.summary_event_rank,
+            joined_time = EXCLUDED.joined_time,
+            current_event = EXCLUDED.current_event,
+            total_transfers = EXCLUDED.total_transfers,
+            total_loans = EXCLUDED.total_loans,
+            total_loans_active = EXCLUDED.total_loans_active,
+            transfers_or_loans = EXCLUDED.transfers_or_loans,
+            deleted = EXCLUDED.deleted,
+            email = EXCLUDED.email,
+            entry_email = EXCLUDED.entry_email,
+            updated_at = CURRENT_TIMESTAMP
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Create table
+            cursor.execute(create_table_sql)
+
+            # Convert to dict for insertion
+            data_dict = manager_data.model_dump()
+            cursor.execute(insert_sql, data_dict)
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated manager data for ID {manager_data.id}")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert manager data: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_league_cup_status(conn: connection, cup_status: LeagueCupStatus) -> None:
+    """Insert league cup status into the database.
+
+    Args:
+        conn: Database connection
+        cup_status: LeagueCupStatus object to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    logger.info(f"Inserting cup status for league {cup_status.name}")
+
+    # Create table if it doesn't exist
+    create_table_sql = """
+        CREATE TABLE IF NOT EXISTS league_cup_status (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            cup_league INTEGER,
+            cup_qualified BOOLEAN,
+            rank INTEGER,
+            entry_rank INTEGER,
+            league_type VARCHAR(50),
+            scoring VARCHAR(50),
+            reprocess_standings BOOLEAN DEFAULT FALSE,
+            cup_league_rank INTEGER,
+            cup_league_entry_rank INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """
+
+    insert_sql = """
+        INSERT INTO league_cup_status (
+            id, name, cup_league, cup_qualified, rank, entry_rank, league_type, scoring,
+            reprocess_standings, cup_league_rank, cup_league_entry_rank
+        ) VALUES (
+            %(id)s, %(name)s, %(cup_league)s, %(cup_qualified)s, %(rank)s, %(entry_rank)s, %(league_type)s, %(scoring)s,
+            %(reprocess_standings)s, %(cup_league_rank)s, %(cup_league_entry_rank)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            cup_league = EXCLUDED.cup_league,
+            cup_qualified = EXCLUDED.cup_qualified,
+            rank = EXCLUDED.rank,
+            entry_rank = EXCLUDED.entry_rank,
+            league_type = EXCLUDED.league_type,
+            scoring = EXCLUDED.scoring,
+            reprocess_standings = EXCLUDED.reprocess_standings,
+            cup_league_rank = EXCLUDED.cup_league_rank,
+            cup_league_entry_rank = EXCLUDED.cup_league_entry_rank,
+            updated_at = CURRENT_TIMESTAMP
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Create table
+            cursor.execute(create_table_sql)
+
+            # Convert to dict for insertion
+            data_dict = cup_status.model_dump()
+            cursor.execute(insert_sql, data_dict)
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated cup status for league ID {cup_status.id}")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert cup status: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_entry_data(conn: connection, entry_data: EntryData) -> None:
+    """Insert entry data into the database.
+
+    Args:
+        conn: Database connection
+        entry_data: EntryData object to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    logger.info(
+        f"Inserting entry data for {entry_data.player_first_name} {entry_data.player_last_name}")
+
+    # Create table if it doesn't exist
+    create_table_sql = """
+        CREATE TABLE IF NOT EXISTS entry_data (
+            id INTEGER PRIMARY KEY,
+            joined_time TIMESTAMP,
+            started_event INTEGER,
+            favourite_team INTEGER,
+            player_first_name VARCHAR(100) NOT NULL,
+            player_last_name VARCHAR(100) NOT NULL,
+            player_region_id INTEGER,
+            player_region_name VARCHAR(100),
+            player_region_iso_code_short VARCHAR(10),
+            player_region_iso_code_long VARCHAR(10),
+            summary_overall_points INTEGER,
+            summary_overall_rank INTEGER,
+            summary_event_points INTEGER,
+            summary_event_rank INTEGER,
+            current_event INTEGER,
+            total_transfers INTEGER,
+            total_loans INTEGER,
+            total_loans_active INTEGER,
+            transfers_or_loans VARCHAR(50),
+            deleted BOOLEAN DEFAULT FALSE,
+            email VARCHAR(255),
+            entry_email VARCHAR(255),
+            name VARCHAR(255),
+            kit VARCHAR(255),
+            last_deadline_bank INTEGER,
+            last_deadline_value INTEGER,
+            last_deadline_total_transfers INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """
+
+    insert_sql = """
+        INSERT INTO entry_data (
+            id, joined_time, started_event, favourite_team, player_first_name, player_last_name,
+            player_region_id, player_region_name, player_region_iso_code_short, player_region_iso_code_long,
+            summary_overall_points, summary_overall_rank, summary_event_points, summary_event_rank,
+            current_event, total_transfers, total_loans, total_loans_active, transfers_or_loans,
+            deleted, email, entry_email, name, kit, last_deadline_bank, last_deadline_value,
+            last_deadline_total_transfers
+        ) VALUES (
+            %(id)s, %(joined_time)s, %(started_event)s, %(favourite_team)s, %(player_first_name)s, %(player_last_name)s,
+            %(player_region_id)s, %(player_region_name)s, %(player_region_iso_code_short)s, %(player_region_iso_code_long)s,
+            %(summary_overall_points)s, %(summary_overall_rank)s, %(summary_event_points)s, %(summary_event_rank)s,
+            %(current_event)s, %(total_transfers)s, %(total_loans)s, %(total_loans_active)s, %(transfers_or_loans)s,
+            %(deleted)s, %(email)s, %(entry_email)s, %(name)s, %(kit)s, %(last_deadline_bank)s, %(last_deadline_value)s,
+            %(last_deadline_total_transfers)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            joined_time = EXCLUDED.joined_time,
+            started_event = EXCLUDED.started_event,
+            favourite_team = EXCLUDED.favourite_team,
+            player_first_name = EXCLUDED.player_first_name,
+            player_last_name = EXCLUDED.player_last_name,
+            player_region_id = EXCLUDED.player_region_id,
+            player_region_name = EXCLUDED.player_region_name,
+            player_region_iso_code_short = EXCLUDED.player_region_iso_code_short,
+            player_region_iso_code_long = EXCLUDED.player_region_iso_code_long,
+            summary_overall_points = EXCLUDED.summary_overall_points,
+            summary_overall_rank = EXCLUDED.summary_overall_rank,
+            summary_event_points = EXCLUDED.summary_event_points,
+            summary_event_rank = EXCLUDED.summary_event_rank,
+            current_event = EXCLUDED.current_event,
+            total_transfers = EXCLUDED.total_transfers,
+            total_loans = EXCLUDED.total_loans,
+            total_loans_active = EXCLUDED.total_loans_active,
+            transfers_or_loans = EXCLUDED.transfers_or_loans,
+            deleted = EXCLUDED.deleted,
+            email = EXCLUDED.email,
+            entry_email = EXCLUDED.entry_email,
+            name = EXCLUDED.name,
+            kit = EXCLUDED.kit,
+            last_deadline_bank = EXCLUDED.last_deadline_bank,
+            last_deadline_value = EXCLUDED.last_deadline_value,
+            last_deadline_total_transfers = EXCLUDED.last_deadline_total_transfers,
+            updated_at = CURRENT_TIMESTAMP
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Create table
+            cursor.execute(create_table_sql)
+
+            # Convert to dict for insertion
+            data_dict = entry_data.model_dump()
+            cursor.execute(insert_sql, data_dict)
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated entry data for ID {entry_data.id}")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert entry data: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_h2h_matches(conn: connection, h2h_data: H2HMatchData, league_id: int) -> None:
+    """Insert H2H matches data into the database.
+
+    Args:
+        conn: Database connection
+        h2h_data: H2HMatchData object to insert
+        league_id: The league ID for these matches
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not h2h_data.results:
+        logger.info("No H2H matches to insert")
+        return
+
+    logger.info(
+        f"Inserting {len(h2h_data.results)} H2H matches for league {league_id}")
+
+    # Create table if it doesn't exist
+    create_table_sql = """
+        CREATE TABLE IF NOT EXISTS h2h_matches (
+            id INTEGER PRIMARY KEY,
+            entry_1_entry INTEGER NOT NULL,
+            entry_1_name VARCHAR(255),
+            entry_1_player_name VARCHAR(255),
+            entry_1_points INTEGER,
+            entry_1_win INTEGER,
+            entry_1_draw INTEGER,
+            entry_1_loss INTEGER,
+            entry_1_total INTEGER,
+            entry_2_entry INTEGER NOT NULL,
+            entry_2_name VARCHAR(255),
+            entry_2_player_name VARCHAR(255),
+            entry_2_points INTEGER,
+            entry_2_win INTEGER,
+            entry_2_draw INTEGER,
+            entry_2_loss INTEGER,
+            entry_2_total INTEGER,
+            is_knockout BOOLEAN DEFAULT FALSE,
+            league_id INTEGER NOT NULL,
+            winner INTEGER,
+            seed_value INTEGER,
+            event_id INTEGER,
+            tiebreak VARCHAR(50),
+            is_bye BOOLEAN DEFAULT FALSE,
+            knockout_name VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """
+
+    insert_sql = """
+        INSERT INTO h2h_matches (
+            id, entry_1_entry, entry_1_name, entry_1_player_name, entry_1_points, entry_1_win, entry_1_draw,
+            entry_1_loss, entry_1_total, entry_2_entry, entry_2_name, entry_2_player_name, entry_2_points,
+            entry_2_win, entry_2_draw, entry_2_loss, entry_2_total, is_knockout, league_id, winner, seed_value,
+            event_id, tiebreak, is_bye, knockout_name
+        ) VALUES (
+            %(id)s, %(entry_1_entry)s, %(entry_1_name)s, %(entry_1_player_name)s, %(entry_1_points)s, %(entry_1_win)s, %(entry_1_draw)s,
+            %(entry_1_loss)s, %(entry_1_total)s, %(entry_2_entry)s, %(entry_2_name)s, %(entry_2_player_name)s, %(entry_2_points)s,
+            %(entry_2_win)s, %(entry_2_draw)s, %(entry_2_loss)s, %(entry_2_total)s, %(is_knockout)s, %(league_id)s, %(winner)s, %(seed_value)s,
+            %(event_id)s, %(tiebreak)s, %(is_bye)s, %(knockout_name)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            entry_1_entry = EXCLUDED.entry_1_entry,
+            entry_1_name = EXCLUDED.entry_1_name,
+            entry_1_player_name = EXCLUDED.entry_1_player_name,
+            entry_1_points = EXCLUDED.entry_1_points,
+            entry_1_win = EXCLUDED.entry_1_win,
+            entry_1_draw = EXCLUDED.entry_1_draw,
+            entry_1_loss = EXCLUDED.entry_1_loss,
+            entry_1_total = EXCLUDED.entry_1_total,
+            entry_2_entry = EXCLUDED.entry_2_entry,
+            entry_2_name = EXCLUDED.entry_2_name,
+            entry_2_player_name = EXCLUDED.entry_2_player_name,
+            entry_2_points = EXCLUDED.entry_2_points,
+            entry_2_win = EXCLUDED.entry_2_win,
+            entry_2_draw = EXCLUDED.entry_2_draw,
+            entry_2_loss = EXCLUDED.entry_2_loss,
+            entry_2_total = EXCLUDED.entry_2_total,
+            is_knockout = EXCLUDED.is_knockout,
+            league_id = EXCLUDED.league_id,
+            winner = EXCLUDED.winner,
+            seed_value = EXCLUDED.seed_value,
+            event_id = EXCLUDED.event_id,
+            tiebreak = EXCLUDED.tiebreak,
+            is_bye = EXCLUDED.is_bye,
+            knockout_name = EXCLUDED.knockout_name
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Create table
+            cursor.execute(create_table_sql)
+
+            # Prepare data
+            matches_data = []
+            for match in h2h_data.results:
+                match_dict = match.model_dump()
+                match_dict['league_id'] = league_id
+                match_dict['event_id'] = match.event
+                matches_data.append(match_dict)
+
+            cursor.executemany(insert_sql, matches_data)
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated {len(matches_data)} H2H matches")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert H2H matches: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_league_standings(conn: connection, standings: LeagueStandings, league_id: int) -> None:
+    """Insert league standings into the database.
+
+    Args:
+        conn: Database connection
+        standings: LeagueStandings object to insert
+        league_id: The league ID for these standings
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not standings.results:
+        logger.info("No league standings to insert")
+        return
+
+    logger.info(
+        f"Inserting {len(standings.results)} league standings for league {league_id}")
+
+    # Create table if it doesn't exist
+    create_table_sql = """
+        CREATE TABLE IF NOT EXISTS league_standings (
+            id INTEGER NOT NULL,
+            league_id INTEGER NOT NULL,
+            event_total INTEGER,
+            player_name VARCHAR(255),
+            rank INTEGER,
+            last_rank INTEGER,
+            rank_sort INTEGER,
+            total INTEGER,
+            entry_id INTEGER,
+            entry_name VARCHAR(255),
+            page INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id, league_id)
+        );
+    """
+
+    insert_sql = """
+        INSERT INTO league_standings (
+            id, league_id, event_total, player_name, rank, last_rank, rank_sort, total, entry_id, entry_name, page
+        ) VALUES (
+            %(id)s, %(league_id)s, %(event_total)s, %(player_name)s, %(rank)s, %(last_rank)s, %(rank_sort)s, %(total)s, %(entry)s, %(entry_name)s, %(page)s
+        )
+        ON CONFLICT (id, league_id) DO UPDATE SET
+            event_total = EXCLUDED.event_total,
+            player_name = EXCLUDED.player_name,
+            rank = EXCLUDED.rank,
+            last_rank = EXCLUDED.last_rank,
+            rank_sort = EXCLUDED.rank_sort,
+            total = EXCLUDED.total,
+            entry_id = EXCLUDED.entry_id,
+            entry_name = EXCLUDED.entry_name,
+            page = EXCLUDED.page,
+            updated_at = CURRENT_TIMESTAMP
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Create table
+            cursor.execute(create_table_sql)
+
+            # Prepare data
+            standings_data = []
+            for entry in standings.results:
+                entry_dict = entry.model_dump()
+                entry_dict['league_id'] = league_id
+                entry_dict['page'] = standings.page
+                standings_data.append(entry_dict)
+
+            cursor.executemany(insert_sql, standings_data)
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated {len(standings_data)} league standings")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert league standings: {e}")
+        conn.rollback()
+        raise
+
+
+def optimize_connection_for_bulk_operations(conn: connection) -> None:
+    """Optimize database connection settings for bulk operations.
+
+    Args:
+        conn: Database connection to optimize
+    """
+    try:
+        with conn.cursor() as cursor:
+            # Optimize PostgreSQL settings for bulk inserts
+            optimization_queries = [
+                "SET synchronous_commit = OFF",  # Faster commits during bulk ops
+                "SET wal_buffers = '16MB'",      # Larger WAL buffers
+                "SET maintenance_work_mem = '256MB'",  # More memory for maintenance ops
+                "SET work_mem = '128MB'",        # More memory for sorting/hashing
+            ]
+
+            for query in optimization_queries:
+                try:
+                    cursor.execute(query)
+                    logger.debug(f"Applied optimization: {query}")
+                except psycopg2.Error as e:
+                    # Some settings might not be available in all PostgreSQL versions
+                    logger.debug(
+                        f"Could not apply optimization '{query}': {e}")
+
+        logger.debug("Database connection optimized for bulk operations")
+
+    except psycopg2.Error as e:
+        logger.warning(f"Failed to optimize connection settings: {e}")
+
+
+def vacuum_analyze_table(conn: connection, table_name: str) -> None:
+    """Run VACUUM ANALYZE on a table to optimize query performance.
+
+    Args:
+        conn: Database connection
+        table_name: Name of the table to vacuum and analyze
+    """
+    try:
+        # VACUUM ANALYZE must be run outside of a transaction
+        old_autocommit = conn.autocommit
+        conn.autocommit = True
+
+        with conn.cursor() as cursor:
+            vacuum_sql = f"VACUUM ANALYZE {table_name}"
+            logger.debug(f"Running {vacuum_sql}")
+            cursor.execute(vacuum_sql)
+            logger.info(f"Completed VACUUM ANALYZE on {table_name}")
+
+        conn.autocommit = old_autocommit
+
+    except psycopg2.Error as e:
+        logger.warning(f"Failed to VACUUM ANALYZE {table_name}: {e}")
+        conn.autocommit = old_autocommit
 
 
 class DatabaseManager:

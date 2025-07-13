@@ -6,10 +6,11 @@ Main application runner that orchestrates the complete data pipeline.
 
 import sys
 import argparse
+import time
 from typing import Optional
 from .config import get_config
 from .utils import get_logger
-from .fetcher import fetch_bootstrap_data, fetch_fixtures_data, fetch_player_history, fetch_current_gameweek_id
+from .fetcher import fetch_bootstrap_data, fetch_fixtures_data, fetch_player_history, fetch_current_gameweek_id, fetch_player_history_batch, fetch_independent_endpoints_parallel
 from .parser import (
     parse_events, parse_players, parse_player_stats, parse_player_history,
     parse_teams, parse_gameweeks, parse_fixtures
@@ -25,7 +26,7 @@ logger = get_logger(__name__)
 
 
 def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include_players: bool = True,
-                     include_player_stats: bool = True, include_player_history: bool = False) -> bool:
+                     include_player_stats: bool = True, include_player_history: bool = True) -> bool:
     """Run the complete data pipeline using the new schema.
 
     Args:
@@ -38,7 +39,8 @@ def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include
     Returns:
         True if successful, False otherwise
     """
-    logger.info("Starting FPL data pipeline (new schema)...")
+    pipeline_start_time = time.time()
+    logger.info("🚀 Starting FPL data pipeline (new schema)...")
 
     if not any([include_events, include_players, include_player_stats, include_player_history]):
         logger.error("At least one data type must be selected")
@@ -50,9 +52,15 @@ def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include
         config = get_config()
         logger.info(f"Configuration loaded - API URL: {config['fpl_api_url']}")
 
-        # Step 2: Fetch bootstrap data from FPL API
-        logger.info("Step 2: Fetching bootstrap data from FPL API")
-        bootstrap_data = fetch_bootstrap_data()
+        # Step 2: Fetch core data from FPL API in parallel
+        logger.info("Step 2: Fetching core data from FPL API in parallel")
+        fetch_results = fetch_independent_endpoints_parallel()
+
+        bootstrap_data = fetch_results['bootstrap_data']
+        if not bootstrap_data:
+            logger.error("Failed to fetch bootstrap data - cannot continue")
+            return False
+
         logger.info("Bootstrap data fetched successfully")
 
         # Get current gameweek ID for player stats
@@ -68,6 +76,8 @@ def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include
         players = []
         player_stats = []
         player_history = []
+        gameweeks = []
+        teams = []
 
         if include_events:
             gameweeks = parse_gameweeks(bootstrap_data)
@@ -93,17 +103,30 @@ def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include
         if include_player_history and players:
             logger.info("Fetching player history data...")
             all_player_history = []
-            # Limit to first 10 players for testing
-            for i, player in enumerate(players[:10]):
-                logger.info(
-                    f"Fetching history for player {player.id} ({i+1}/{min(10, len(players))})")
-                history_data = fetch_player_history(player.id)
+
+            # Extract player IDs for parallel fetching
+            player_ids = [player.id for player in players]
+
+            # Fetch history for all players in parallel
+            config = get_config()
+            max_workers = config.get('parallel_workers', 15)
+            logger.info(
+                f"Starting parallel fetch for {len(player_ids)} players with {max_workers} workers...")
+            history_results = fetch_player_history_batch(
+                player_ids, max_workers=max_workers)
+
+            # Process the results
+            successful_fetches = 0
+            for player_id, history_data in history_results:
                 if history_data:
                     player_history_entries = parse_player_history(
-                        history_data, player.id)
+                        history_data, player_id)
                     all_player_history.extend(player_history_entries)
+                    successful_fetches += 1
 
             player_history = all_player_history
+            logger.info(
+                f"Successfully fetched history for {successful_fetches}/{len(players)} players")
             logger.info(f"Parsed {len(player_history)} player history entries")
         else:
             logger.info(
@@ -128,7 +151,15 @@ def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include
                 logger.info(
                     f"Would insert {len(player_history)} player history entries")
 
-            logger.info("Pipeline completed successfully (dry run)")
+            pipeline_duration = time.time() - pipeline_start_time
+            logger.info(
+                f"🎉 Pipeline completed successfully (dry run) in {pipeline_duration:.2f} seconds")
+            logger.info(f"📊 Dry run performance summary:")
+            logger.info(f"   - Total execution time: {pipeline_duration:.2f}s")
+            logger.info(
+                f"   - Data parsed: Events: {len(gameweeks) if 'gameweeks' in locals() else 0}, Teams: {len(teams) if 'teams' in locals() else 0}, Players: {len(players) if 'players' in locals() else 0}")
+            logger.info(
+                f"   - Player stats: {len(player_stats) if 'player_stats' in locals() else 0}, Player history: {len(player_history) if 'player_history' in locals() else 0}")
             return True
 
         # Step 4: Insert data into database
@@ -162,11 +193,21 @@ def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include
             if player_history:
                 insert_player_history(conn, player_history)
 
-        logger.info("Pipeline completed successfully")
+        pipeline_duration = time.time() - pipeline_start_time
+        logger.info(
+            f"🎉 Pipeline completed successfully in {pipeline_duration:.2f} seconds")
+        logger.info(f"📊 Overall pipeline performance summary:")
+        logger.info(f"   - Total execution time: {pipeline_duration:.2f}s")
+        logger.info(
+            f"   - Data processed: Events: {len(gameweeks) if 'gameweeks' in locals() else 0}, Teams: {len(teams) if 'teams' in locals() else 0}, Players: {len(players) if 'players' in locals() else 0}")
+        logger.info(
+            f"   - Player stats: {len(player_stats) if 'player_stats' in locals() else 0}, Player history: {len(player_history) if 'player_history' in locals() else 0}")
         return True
 
     except Exception as e:
-        logger.error(f"Pipeline failed: {e}")
+        pipeline_duration = time.time() - pipeline_start_time
+        logger.error(
+            f"❌ Pipeline failed after {pipeline_duration:.2f} seconds: {e}")
         return False
 
 
@@ -196,23 +237,28 @@ def run_bootstrap_pipeline(dry_run: bool = False, include_teams: bool = True, in
         config = get_config()
         logger.info(f"Configuration loaded - API URL: {config['fpl_api_url']}")
 
-        # Step 2: Fetch bootstrap data from FPL API
-        logger.info("Step 2: Fetching bootstrap data from FPL API")
-        bootstrap_data = fetch_bootstrap_data()
+        # Step 2: Fetch core data from FPL API in parallel
+        logger.info("Step 2: Fetching core data from FPL API in parallel")
+        fetch_results = fetch_independent_endpoints_parallel()
+
+        bootstrap_data = fetch_results['bootstrap_data']
+        if not bootstrap_data:
+            logger.error("Failed to fetch bootstrap data - cannot continue")
+            return False
+
         logger.info("Bootstrap data fetched successfully")
 
-        # Step 2.1: Fetch fixtures data from FPL API
-        logger.info("Fetching fixtures data from FPL API")
+        # Handle fixtures data from parallel fetch
         fixtures_data_list = []
         if include_fixtures:
-            fixtures_data_list = fetch_fixtures_data()
+            fixtures_data_list = fetch_results['fixtures_data']
             if not fixtures_data_list:
                 logger.warning(
                     "Failed to fetch fixtures data. Proceeding without fixtures.")
             else:
                 logger.info("Fixtures data fetched successfully")
         else:
-            logger.info("Skipping fixtures fetching (not selected)")
+            logger.info("Skipping fixtures parsing (not selected)")
 
         # Step 3: Parse teams, players, gameweeks, and fixtures based on selection
         logger.info("Step 3: Parsing data")
@@ -432,7 +478,7 @@ def main():
         include_player_stats = args.player_stats if any(
             new_args) or args.players else True
         include_player_history = args.player_history if any(
-            new_args) or args.players else False
+            new_args) or args.players else True
 
         if args.verbose:
             logger.info(

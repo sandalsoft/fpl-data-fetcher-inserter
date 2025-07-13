@@ -1,5 +1,10 @@
 from typing import Dict, List, Any
-from .models import Event, Player, PlayerStats, PlayerHistory, Team, Gameweek, Fixture
+from .models import (
+    Event, Player, PlayerStats, PlayerHistory, Team, Gameweek, Fixture,
+    GameweekLiveData, GameweekLivePlayer, GameweekLivePlayerStats, GameweekLivePlayerExplain,
+    ManagerData, LeagueCupStatus, EntryData, H2HMatch, H2HMatchData,
+    LeagueStandings, LeagueStandingEntry
+)
 from .utils import get_logger
 
 logger = get_logger(__name__)
@@ -447,3 +452,229 @@ def parse_fixtures(data: List[Dict[str, Any]]) -> List[Fixture]:
 
     logger.info(f"Successfully parsed {len(fixtures)} fixtures")
     return fixtures
+
+
+# New parsers for additional API endpoints
+def parse_gameweek_live_data(data: Dict[str, Any]) -> GameweekLiveData:
+    """Parse gameweek live data from event/{event_id}/live/ API response.
+
+    Args:
+        data: The live gameweek JSON response
+
+    Returns:
+        GameweekLiveData object
+
+    Raises:
+        KeyError: If expected 'elements' key is missing
+        ValidationError: If data doesn't match GameweekLiveData model
+    """
+    logger.info("Parsing gameweek live data")
+
+    if 'elements' not in data:
+        raise KeyError("'elements' key not found in live data")
+
+    elements_data = data['elements']
+    elements = []
+
+    for element_data in elements_data:
+        try:
+            # Helper function to safely get values
+            def safe_float(value):
+                if value is None or value == "":
+                    return None
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return None
+
+            def safe_int(value):
+                if value is None or value == "":
+                    return None
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return None
+
+            def safe_bool(value):
+                if value is None:
+                    return None
+                return bool(value)
+
+            # Parse stats
+            stats_data = element_data.get('stats', {})
+            stats = GameweekLivePlayerStats(
+                goals_scored=safe_int(stats_data.get('goals_scored')),
+                assists=safe_int(stats_data.get('assists')),
+                own_goals=safe_int(stats_data.get('own_goals')),
+                penalties_saved=safe_int(stats_data.get('penalties_saved')),
+                penalties_missed=safe_int(stats_data.get('penalties_missed')),
+                yellow_cards=safe_int(stats_data.get('yellow_cards')),
+                red_cards=safe_int(stats_data.get('red_cards')),
+                saves=safe_int(stats_data.get('saves')),
+                bonus=safe_int(stats_data.get('bonus')),
+                bps=safe_int(stats_data.get('bps')),
+                influence=safe_float(stats_data.get('influence')),
+                creativity=safe_float(stats_data.get('creativity')),
+                threat=safe_float(stats_data.get('threat')),
+                ict_index=safe_float(stats_data.get('ict_index')),
+                total_points=safe_int(stats_data.get('total_points')),
+                in_dreamteam=safe_bool(stats_data.get('in_dreamteam')),
+                minutes=safe_int(stats_data.get('minutes'))
+            )
+
+            # Parse explain
+            explain_data = element_data.get('explain', [])
+            explain = []
+            for explain_item in explain_data:
+                explain_entry = GameweekLivePlayerExplain(
+                    fixture=safe_int(explain_item.get('fixture')),
+                    stats=explain_item.get('stats', [])
+                )
+                explain.append(explain_entry)
+
+            element = GameweekLivePlayer(
+                id=element_data['id'],
+                stats=stats,
+                explain=explain
+            )
+            elements.append(element)
+        except Exception as e:
+            logger.error(
+                f"Failed to parse live data for element ID {element_data.get('id', 'unknown')}: {e}")
+            raise
+
+    live_data = GameweekLiveData(elements=elements)
+    logger.info(f"Successfully parsed live data for {len(elements)} elements")
+    return live_data
+
+
+def parse_manager_data(data: Dict[str, Any]) -> ManagerData:
+    """Parse manager data from /me/ API response.
+
+    Args:
+        data: The manager JSON response
+
+    Returns:
+        ManagerData object
+
+    Raises:
+        ValidationError: If data doesn't match ManagerData model
+    """
+    logger.info("Parsing manager data")
+
+    try:
+        manager = ManagerData(**data)
+        logger.info(
+            f"Successfully parsed manager data for {manager.player_first_name} {manager.player_last_name}")
+        return manager
+    except Exception as e:
+        logger.error(f"Failed to parse manager data: {e}")
+        raise
+
+
+def parse_league_cup_status(data: Dict[str, Any]) -> LeagueCupStatus:
+    """Parse league cup status from /league/{league_id}/cup-status/ API response.
+
+    Args:
+        data: The league cup status JSON response
+
+    Returns:
+        LeagueCupStatus object
+
+    Raises:
+        ValidationError: If data doesn't match LeagueCupStatus model
+    """
+    logger.info("Parsing league cup status data")
+
+    try:
+        cup_status = LeagueCupStatus(**data)
+        logger.info(
+            f"Successfully parsed cup status for league {cup_status.name}")
+        return cup_status
+    except Exception as e:
+        logger.error(f"Failed to parse league cup status: {e}")
+        raise
+
+
+def parse_entry_data(data: Dict[str, Any]) -> EntryData:
+    """Parse entry data from /entry/{entry_id}/ API response.
+
+    Args:
+        data: The entry JSON response
+
+    Returns:
+        EntryData object
+
+    Raises:
+        ValidationError: If data doesn't match EntryData model
+    """
+    logger.info("Parsing entry data")
+
+    try:
+        entry = EntryData(**data)
+        logger.info(
+            f"Successfully parsed entry data for {entry.player_first_name} {entry.player_last_name}")
+        return entry
+    except Exception as e:
+        logger.error(f"Failed to parse entry data: {e}")
+        raise
+
+
+def parse_h2h_matches(data: Dict[str, Any]) -> H2HMatchData:
+    """Parse H2H matches data from /h2h-matches/league/{league_id}/entry/{entry_id}/page/{page}/ API response.
+
+    Args:
+        data: The H2H matches JSON response
+
+    Returns:
+        H2HMatchData object
+
+    Raises:
+        ValidationError: If data doesn't match H2HMatchData model
+    """
+    logger.info("Parsing H2H matches data")
+
+    try:
+        h2h_data = H2HMatchData(**data)
+        logger.info(f"Successfully parsed {len(h2h_data.results)} H2H matches")
+        return h2h_data
+    except Exception as e:
+        logger.error(f"Failed to parse H2H matches data: {e}")
+        raise
+
+
+def parse_league_standings(data: Dict[str, Any]) -> LeagueStandings:
+    """Parse league standings from /leagues-classic/{league_id}/standings/ API response.
+
+    Args:
+        data: The league standings JSON response
+
+    Returns:
+        LeagueStandings object
+
+    Raises:
+        ValidationError: If data doesn't match LeagueStandings model
+    """
+    logger.info("Parsing league standings data")
+
+    try:
+        # Extract the standings data from the response
+        standings_data = data.get('standings', data)
+
+        # The API response structure might have the results nested differently
+        if 'results' in standings_data:
+            league_standings = LeagueStandings(**standings_data)
+        else:
+            # Handle case where standings data is structured differently
+            league_standings = LeagueStandings(
+                has_next=data.get('has_next', False),
+                page=data.get('page', 1),
+                results=data.get('results', [])
+            )
+
+        logger.info(
+            f"Successfully parsed {len(league_standings.results)} league standings entries")
+        return league_standings
+    except Exception as e:
+        logger.error(f"Failed to parse league standings: {e}")
+        raise
