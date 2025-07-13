@@ -18,9 +18,57 @@ class Player(BaseModel):
     code: int
     first_name: str
     second_name: str
-    team_id: int  # Changed from 'team' to 'team_id' to match new schema
+    web_name: str
+    team: int  # Foreign key to teams table - matches schema
+    team_code: int
     element_type: int  # Position type (1=GK, 2=DEF, 3=MID, 4=FWD)
     now_cost: int  # Cost in FPL points (multiply by 0.1 for actual cost)
+    total_points: int = 0
+    status: str = 'a'  # Player availability status
+    
+    # Performance stats with defaults to match schema
+    minutes: int = 0
+    goals_scored: int = 0
+    assists: int = 0
+    clean_sheets: int = 0
+    goals_conceded: int = 0
+    own_goals: int = 0
+    penalties_saved: int = 0
+    penalties_missed: int = 0
+    yellow_cards: int = 0
+    red_cards: int = 0
+    saves: int = 0
+    bonus: int = 0
+    
+    # String-based stats (stored as strings in API) with defaults
+    form: str = '0.0'
+    points_per_game: str = '0.0'
+    selected_by_percent: str = '0.0'
+    value_form: str = '0.0'
+    value_season: str = '0.0'
+    expected_goals: str = '0.00'
+    expected_assists: str = '0.00'
+    expected_goal_involvements: str = '0.00'
+    expected_goals_conceded: str = '0.00'
+    influence: str = '0.0'
+    creativity: str = '0.0'
+    threat: str = '0.0'
+    ict_index: str = '0.0'
+    
+    # Transfer stats
+    transfers_in: int = 0
+    transfers_out: int = 0
+    transfers_in_event: int = 0
+    transfers_out_event: int = 0
+    event_points: int = 0
+    
+    # Optional nullable fields
+    chance_of_playing_this_round: Optional[int] = None
+    chance_of_playing_next_round: Optional[int] = None
+    news: Optional[str] = None
+    news_added: Optional[str] = None  # ISO datetime string
+    squad_number: Optional[int] = None
+    photo: Optional[str] = None
 
 
 class PlayerStats(BaseModel):

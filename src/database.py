@@ -204,6 +204,215 @@ def insert_events(conn: connection, events: List[Event]) -> None:
         raise
 
 
+def insert_teams_new(conn: connection, teams: List[Team]) -> None:
+    """Insert team data into the database (new schema).
+
+    Args:
+        conn: Database connection
+        teams: List of Team objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not teams:
+        logger.info("No teams to insert")
+        return
+
+    logger.info(f"Inserting {len(teams)} teams into database")
+
+    insert_sql = """
+        INSERT INTO teams (
+            id, name, short_name, code, draw, loss, played, points, position,
+            strength, win, unavailable, strength_overall_home, strength_overall_away,
+            strength_attack_home, strength_attack_away, strength_defence_home,
+            strength_defence_away, pulse_id, form, team_division
+        ) VALUES (
+            %(id)s, %(name)s, %(short_name)s, %(code)s, %(draw)s, %(loss)s, %(played)s,
+            %(points)s, %(position)s, %(strength)s, %(win)s, %(unavailable)s,
+            %(strength_overall_home)s, %(strength_overall_away)s, %(strength_attack_home)s,
+            %(strength_attack_away)s, %(strength_defence_home)s, %(strength_defence_away)s,
+            %(pulse_id)s, %(form)s, %(team_division)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            short_name = EXCLUDED.short_name,
+            code = EXCLUDED.code,
+            draw = EXCLUDED.draw,
+            loss = EXCLUDED.loss,
+            played = EXCLUDED.played,
+            points = EXCLUDED.points,
+            position = EXCLUDED.position,
+            strength = EXCLUDED.strength,
+            win = EXCLUDED.win,
+            unavailable = EXCLUDED.unavailable,
+            strength_overall_home = EXCLUDED.strength_overall_home,
+            strength_overall_away = EXCLUDED.strength_overall_away,
+            strength_attack_home = EXCLUDED.strength_attack_home,
+            strength_attack_away = EXCLUDED.strength_attack_away,
+            strength_defence_home = EXCLUDED.strength_defence_home,
+            strength_defence_away = EXCLUDED.strength_defence_away,
+            pulse_id = EXCLUDED.pulse_id,
+            form = EXCLUDED.form,
+            team_division = EXCLUDED.team_division
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert Team objects to dictionaries for psycopg2
+            teams_data = [team.model_dump() for team in teams]
+
+            # Execute in batches to handle large datasets
+            batch_size = 100  # Smaller batch size for teams
+            for i in range(0, len(teams_data), batch_size):
+                batch = teams_data[i:i + batch_size]
+                try:
+                    cursor.executemany(insert_sql, batch)
+                    logger.debug(
+                        f"Inserted team batch {i//batch_size + 1} ({len(batch)} teams)")
+                except psycopg2.IntegrityError as e:
+                    logger.error(
+                        f"Integrity constraint violation in team batch {i//batch_size + 1}: {e}")
+                    # Try to identify the specific problematic record
+                    for j, team_data in enumerate(batch):
+                        try:
+                            cursor.execute(insert_sql, team_data)
+                        except psycopg2.IntegrityError as inner_e:
+                            logger.error(
+                                f"Failed to insert team {team_data.get('id', 'unknown')}: {inner_e}")
+                            continue
+                except psycopg2.DataError as e:
+                    logger.error(
+                        f"Data type error in team batch {i//batch_size + 1}: {e}")
+                    raise
+                except psycopg2.Error as e:
+                    logger.error(
+                        f"Database error in team batch {i//batch_size + 1}: {e}")
+                    raise
+
+            conn.commit()
+
+        logger.info(f"Successfully inserted/updated {len(teams)} teams")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert teams: {e}")
+        conn.rollback()
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error inserting teams: {e}")
+        conn.rollback()
+        raise
+
+
+def insert_gameweeks_new(conn: connection, gameweeks: List[Gameweek]) -> None:
+    """Insert gameweek data into the database (new schema).
+
+    Args:
+        conn: Database connection
+        gameweeks: List of Gameweek objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not gameweeks:
+        logger.info("No gameweeks to insert")
+        return
+
+    logger.info(f"Inserting {len(gameweeks)} gameweeks into database")
+
+    insert_sql = """
+        INSERT INTO gameweeks (
+            id, name, deadline_time, finished, is_previous, is_current, is_next,
+            release_time, average_entry_score, data_checked, highest_scoring_entry,
+            deadline_time_epoch, deadline_time_game_offset, highest_score,
+            cup_leagues_created, h2h_ko_matches_created, can_enter, can_manage,
+            released, ranked_count, transfers_made, most_selected,
+            most_transferred_in, most_captained, most_vice_captained, top_element
+        ) VALUES (
+            %(id)s, %(name)s, %(deadline_time)s, %(finished)s, %(is_previous)s,
+            %(is_current)s, %(is_next)s, %(release_time)s, %(average_entry_score)s,
+            %(data_checked)s, %(highest_scoring_entry)s, %(deadline_time_epoch)s,
+            %(deadline_time_game_offset)s, %(highest_score)s, %(cup_leagues_created)s,
+            %(h2h_ko_matches_created)s, %(can_enter)s, %(can_manage)s, %(released)s,
+            %(ranked_count)s, %(transfers_made)s, %(most_selected)s,
+            %(most_transferred_in)s, %(most_captained)s, %(most_vice_captained)s,
+            %(top_element)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            deadline_time = EXCLUDED.deadline_time,
+            finished = EXCLUDED.finished,
+            is_previous = EXCLUDED.is_previous,
+            is_current = EXCLUDED.is_current,
+            is_next = EXCLUDED.is_next,
+            release_time = EXCLUDED.release_time,
+            average_entry_score = EXCLUDED.average_entry_score,
+            data_checked = EXCLUDED.data_checked,
+            highest_scoring_entry = EXCLUDED.highest_scoring_entry,
+            deadline_time_epoch = EXCLUDED.deadline_time_epoch,
+            deadline_time_game_offset = EXCLUDED.deadline_time_game_offset,
+            highest_score = EXCLUDED.highest_score,
+            cup_leagues_created = EXCLUDED.cup_leagues_created,
+            h2h_ko_matches_created = EXCLUDED.h2h_ko_matches_created,
+            can_enter = EXCLUDED.can_enter,
+            can_manage = EXCLUDED.can_manage,
+            released = EXCLUDED.released,
+            ranked_count = EXCLUDED.ranked_count,
+            transfers_made = EXCLUDED.transfers_made,
+            most_selected = EXCLUDED.most_selected,
+            most_transferred_in = EXCLUDED.most_transferred_in,
+            most_captained = EXCLUDED.most_captained,
+            most_vice_captained = EXCLUDED.most_vice_captained,
+            top_element = EXCLUDED.top_element
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert Gameweek objects to dictionaries for psycopg2
+            gameweeks_data = [gameweek.model_dump() for gameweek in gameweeks]
+
+            # Execute in batches to handle large datasets
+            batch_size = 100  # Smaller batch size for gameweeks
+            for i in range(0, len(gameweeks_data), batch_size):
+                batch = gameweeks_data[i:i + batch_size]
+                try:
+                    cursor.executemany(insert_sql, batch)
+                    logger.debug(
+                        f"Inserted gameweek batch {i//batch_size + 1} ({len(batch)} gameweeks)")
+                except psycopg2.IntegrityError as e:
+                    logger.error(
+                        f"Integrity constraint violation in gameweek batch {i//batch_size + 1}: {e}")
+                    # Try to identify the specific problematic record
+                    for j, gameweek_data in enumerate(batch):
+                        try:
+                            cursor.execute(insert_sql, gameweek_data)
+                        except psycopg2.IntegrityError as inner_e:
+                            logger.error(
+                                f"Failed to insert gameweek {gameweek_data.get('id', 'unknown')}: {inner_e}")
+                            continue
+                except psycopg2.DataError as e:
+                    logger.error(
+                        f"Data type error in gameweek batch {i//batch_size + 1}: {e}")
+                    raise
+                except psycopg2.Error as e:
+                    logger.error(
+                        f"Database error in gameweek batch {i//batch_size + 1}: {e}")
+                    raise
+
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated {len(gameweeks)} gameweeks")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert gameweeks: {e}")
+        conn.rollback()
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error inserting gameweeks: {e}")
+        conn.rollback()
+        raise
+
+
 def insert_players_new(conn: connection, players: List[Player]) -> None:
     """Insert player data into the database (new schema).
 
@@ -222,30 +431,123 @@ def insert_players_new(conn: connection, players: List[Player]) -> None:
 
     insert_sql = """
         INSERT INTO players (
-            id, code, first_name, second_name, team_id, element_type, now_cost
+            id, first_name, second_name, web_name, team, team_code, element_type,
+            now_cost, total_points, status, code, minutes, goals_scored, assists,
+            clean_sheets, goals_conceded, own_goals, penalties_saved, penalties_missed,
+            yellow_cards, red_cards, saves, bonus, form, points_per_game,
+            selected_by_percent, value_form, value_season, expected_goals,
+            expected_assists, expected_goal_involvements, expected_goals_conceded,
+            influence, creativity, threat, ict_index, transfers_in, transfers_out,
+            transfers_in_event, transfers_out_event, event_points,
+            chance_of_playing_this_round, chance_of_playing_next_round, news,
+            news_added, squad_number, photo
         ) VALUES (
-            %(id)s, %(code)s, %(first_name)s, %(second_name)s, %(team_id)s, %(element_type)s, %(now_cost)s
+            %(id)s, %(first_name)s, %(second_name)s, %(web_name)s, %(team)s, %(team_code)s,
+            %(element_type)s, %(now_cost)s, %(total_points)s, %(status)s, %(code)s,
+            %(minutes)s, %(goals_scored)s, %(assists)s, %(clean_sheets)s,
+            %(goals_conceded)s, %(own_goals)s, %(penalties_saved)s, %(penalties_missed)s,
+            %(yellow_cards)s, %(red_cards)s, %(saves)s, %(bonus)s, %(form)s,
+            %(points_per_game)s, %(selected_by_percent)s, %(value_form)s, %(value_season)s,
+            %(expected_goals)s, %(expected_assists)s, %(expected_goal_involvements)s,
+            %(expected_goals_conceded)s, %(influence)s, %(creativity)s, %(threat)s,
+            %(ict_index)s, %(transfers_in)s, %(transfers_out)s, %(transfers_in_event)s,
+            %(transfers_out_event)s, %(event_points)s, %(chance_of_playing_this_round)s,
+            %(chance_of_playing_next_round)s, %(news)s, %(news_added)s, %(squad_number)s,
+            %(photo)s
         )
         ON CONFLICT (id) DO UPDATE SET
-            code = EXCLUDED.code,
             first_name = EXCLUDED.first_name,
             second_name = EXCLUDED.second_name,
-            team_id = EXCLUDED.team_id,
+            web_name = EXCLUDED.web_name,
+            team = EXCLUDED.team,
+            team_code = EXCLUDED.team_code,
             element_type = EXCLUDED.element_type,
-            now_cost = EXCLUDED.now_cost
+            now_cost = EXCLUDED.now_cost,
+            total_points = EXCLUDED.total_points,
+            status = EXCLUDED.status,
+            code = EXCLUDED.code,
+            minutes = EXCLUDED.minutes,
+            goals_scored = EXCLUDED.goals_scored,
+            assists = EXCLUDED.assists,
+            clean_sheets = EXCLUDED.clean_sheets,
+            goals_conceded = EXCLUDED.goals_conceded,
+            own_goals = EXCLUDED.own_goals,
+            penalties_saved = EXCLUDED.penalties_saved,
+            penalties_missed = EXCLUDED.penalties_missed,
+            yellow_cards = EXCLUDED.yellow_cards,
+            red_cards = EXCLUDED.red_cards,
+            saves = EXCLUDED.saves,
+            bonus = EXCLUDED.bonus,
+            form = EXCLUDED.form,
+            points_per_game = EXCLUDED.points_per_game,
+            selected_by_percent = EXCLUDED.selected_by_percent,
+            value_form = EXCLUDED.value_form,
+            value_season = EXCLUDED.value_season,
+            expected_goals = EXCLUDED.expected_goals,
+            expected_assists = EXCLUDED.expected_assists,
+            expected_goal_involvements = EXCLUDED.expected_goal_involvements,
+            expected_goals_conceded = EXCLUDED.expected_goals_conceded,
+            influence = EXCLUDED.influence,
+            creativity = EXCLUDED.creativity,
+            threat = EXCLUDED.threat,
+            ict_index = EXCLUDED.ict_index,
+            transfers_in = EXCLUDED.transfers_in,
+            transfers_out = EXCLUDED.transfers_out,
+            transfers_in_event = EXCLUDED.transfers_in_event,
+            transfers_out_event = EXCLUDED.transfers_out_event,
+            event_points = EXCLUDED.event_points,
+            chance_of_playing_this_round = EXCLUDED.chance_of_playing_this_round,
+            chance_of_playing_next_round = EXCLUDED.chance_of_playing_next_round,
+            news = EXCLUDED.news,
+            news_added = EXCLUDED.news_added,
+            squad_number = EXCLUDED.squad_number,
+            photo = EXCLUDED.photo
     """
 
     try:
         with conn.cursor() as cursor:
             # Convert Player objects to dictionaries for psycopg2
             players_data = [player.model_dump() for player in players]
-            cursor.executemany(insert_sql, players_data)
+
+            # Execute in batches to handle large datasets
+            batch_size = 1000
+            for i in range(0, len(players_data), batch_size):
+                batch = players_data[i:i + batch_size]
+                try:
+                    cursor.executemany(insert_sql, batch)
+                    logger.debug(
+                        f"Inserted batch {i//batch_size + 1} ({len(batch)} players)")
+                except psycopg2.IntegrityError as e:
+                    logger.error(
+                        f"Integrity constraint violation in batch {i//batch_size + 1}: {e}")
+                    # Try to identify the specific problematic record
+                    for j, player_data in enumerate(batch):
+                        try:
+                            cursor.execute(insert_sql, player_data)
+                        except psycopg2.IntegrityError as inner_e:
+                            logger.error(
+                                f"Failed to insert player {player_data.get('id', 'unknown')}: {inner_e}")
+                            # Continue with other records
+                            continue
+                except psycopg2.DataError as e:
+                    logger.error(
+                        f"Data type error in batch {i//batch_size + 1}: {e}")
+                    raise
+                except psycopg2.Error as e:
+                    logger.error(
+                        f"Database error in batch {i//batch_size + 1}: {e}")
+                    raise
+
             conn.commit()
 
         logger.info(f"Successfully inserted/updated {len(players)} players")
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert players: {e}")
+        conn.rollback()
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error inserting players: {e}")
         conn.rollback()
         raise
 
@@ -316,13 +618,46 @@ def insert_player_stats(conn: connection, player_stats: List[PlayerStats]) -> No
         with conn.cursor() as cursor:
             # Convert PlayerStats objects to dictionaries for psycopg2
             stats_data = [stats.model_dump() for stats in player_stats]
-            cursor.executemany(insert_sql, stats_data)
+
+            # Execute in batches to handle large datasets
+            batch_size = 1000
+            for i in range(0, len(stats_data), batch_size):
+                batch = stats_data[i:i + batch_size]
+                try:
+                    cursor.executemany(insert_sql, batch)
+                    logger.debug(
+                        f"Inserted player stats batch {i//batch_size + 1} ({len(batch)} records)")
+                except psycopg2.IntegrityError as e:
+                    logger.error(
+                        f"Integrity constraint violation in player stats batch {i//batch_size + 1}: {e}")
+                    # Try to identify the specific problematic record
+                    for j, stats_data_item in enumerate(batch):
+                        try:
+                            cursor.execute(insert_sql, stats_data_item)
+                        except psycopg2.IntegrityError as inner_e:
+                            logger.error(
+                                f"Failed to insert player stats for player {stats_data_item.get('player_id', 'unknown')}, gameweek {stats_data_item.get('gameweek_id', 'unknown')}: {inner_e}")
+                            continue
+                except psycopg2.DataError as e:
+                    logger.error(
+                        f"Data type error in player stats batch {i//batch_size + 1}: {e}")
+                    raise
+                except psycopg2.Error as e:
+                    logger.error(
+                        f"Database error in player stats batch {i//batch_size + 1}: {e}")
+                    raise
+
             conn.commit()
 
-        logger.info(f"Successfully inserted/updated {len(player_stats)} player stats")
+        logger.info(
+            f"Successfully inserted/updated {len(player_stats)} player stats")
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert player stats: {e}")
+        conn.rollback()
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error inserting player stats: {e}")
         conn.rollback()
         raise
 
@@ -341,7 +676,8 @@ def insert_player_history(conn: connection, player_history: List[PlayerHistory])
         logger.info("No player history to insert")
         return
 
-    logger.info(f"Inserting {len(player_history)} player history entries into database")
+    logger.info(
+        f"Inserting {len(player_history)} player history entries into database")
 
     insert_sql = """
         INSERT INTO player_history (
@@ -399,18 +735,130 @@ def insert_player_history(conn: connection, player_history: List[PlayerHistory])
         with conn.cursor() as cursor:
             # Convert PlayerHistory objects to dictionaries for psycopg2
             history_data = [history.model_dump() for history in player_history]
-            cursor.executemany(insert_sql, history_data)
+
+            # Execute in batches to handle large datasets
+            batch_size = 1000
+            for i in range(0, len(history_data), batch_size):
+                batch = history_data[i:i + batch_size]
+                try:
+                    cursor.executemany(insert_sql, batch)
+                    logger.debug(
+                        f"Inserted player history batch {i//batch_size + 1} ({len(batch)} records)")
+                except psycopg2.IntegrityError as e:
+                    logger.error(
+                        f"Integrity constraint violation in player history batch {i//batch_size + 1}: {e}")
+                    # Try to identify the specific problematic record
+                    for j, history_data_item in enumerate(batch):
+                        try:
+                            cursor.execute(insert_sql, history_data_item)
+                        except psycopg2.IntegrityError as inner_e:
+                            logger.error(
+                                f"Failed to insert player history for player {history_data_item.get('player_id', 'unknown')}, gameweek {history_data_item.get('gameweek_id', 'unknown')}: {inner_e}")
+                            continue
+                except psycopg2.DataError as e:
+                    logger.error(
+                        f"Data type error in player history batch {i//batch_size + 1}: {e}")
+                    raise
+                except psycopg2.Error as e:
+                    logger.error(
+                        f"Database error in player history batch {i//batch_size + 1}: {e}")
+                    raise
+
             conn.commit()
 
-        logger.info(f"Successfully inserted/updated {len(player_history)} player history entries")
+        logger.info(
+            f"Successfully inserted/updated {len(player_history)} player history entries")
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert player history: {e}")
         conn.rollback()
         raise
+    except Exception as e:
+        logger.error(f"Unexpected error inserting player history: {e}")
+        conn.rollback()
+        raise
 
 
 # Legacy functions - keeping for backwards compatibility
+def insert_gameweeks(conn: connection, gameweeks: List[Gameweek]) -> None:
+    """Insert gameweek data into the database (legacy function).
+
+    Args:
+        conn: Database connection
+        gameweeks: List of Gameweek objects to insert
+
+    Raises:
+        psycopg2.Error: If insertion fails
+    """
+    if not gameweeks:
+        logger.info("No gameweeks to insert")
+        return
+
+    logger.info(f"Inserting {len(gameweeks)} gameweeks into database")
+
+    insert_sql = """
+        INSERT INTO gameweeks (
+            id, name, deadline_time, finished, is_previous, is_current, is_next,
+            release_time, average_entry_score, data_checked, highest_scoring_entry,
+            deadline_time_epoch, deadline_time_game_offset, highest_score,
+            cup_leagues_created, h2h_ko_matches_created, can_enter, can_manage,
+            released, ranked_count, transfers_made, most_selected,
+            most_transferred_in, most_captained, most_vice_captained, top_element
+        ) VALUES (
+            %(id)s, %(name)s, %(deadline_time)s, %(finished)s, %(is_previous)s,
+            %(is_current)s, %(is_next)s, %(release_time)s, %(average_entry_score)s,
+            %(data_checked)s, %(highest_scoring_entry)s, %(deadline_time_epoch)s,
+            %(deadline_time_game_offset)s, %(highest_score)s, %(cup_leagues_created)s,
+            %(h2h_ko_matches_created)s, %(can_enter)s, %(can_manage)s, %(released)s,
+            %(ranked_count)s, %(transfers_made)s, %(most_selected)s,
+            %(most_transferred_in)s, %(most_captained)s, %(most_vice_captained)s,
+            %(top_element)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            deadline_time = EXCLUDED.deadline_time,
+            finished = EXCLUDED.finished,
+            is_previous = EXCLUDED.is_previous,
+            is_current = EXCLUDED.is_current,
+            is_next = EXCLUDED.is_next,
+            release_time = EXCLUDED.release_time,
+            average_entry_score = EXCLUDED.average_entry_score,
+            data_checked = EXCLUDED.data_checked,
+            highest_scoring_entry = EXCLUDED.highest_scoring_entry,
+            deadline_time_epoch = EXCLUDED.deadline_time_epoch,
+            deadline_time_game_offset = EXCLUDED.deadline_time_game_offset,
+            highest_score = EXCLUDED.highest_score,
+            cup_leagues_created = EXCLUDED.cup_leagues_created,
+            h2h_ko_matches_created = EXCLUDED.h2h_ko_matches_created,
+            can_enter = EXCLUDED.can_enter,
+            can_manage = EXCLUDED.can_manage,
+            released = EXCLUDED.released,
+            ranked_count = EXCLUDED.ranked_count,
+            transfers_made = EXCLUDED.transfers_made,
+            most_selected = EXCLUDED.most_selected,
+            most_transferred_in = EXCLUDED.most_transferred_in,
+            most_captained = EXCLUDED.most_captained,
+            most_vice_captained = EXCLUDED.most_vice_captained,
+            top_element = EXCLUDED.top_element
+    """
+
+    try:
+        with conn.cursor() as cursor:
+            # Convert Gameweek objects to dictionaries for psycopg2
+            gameweeks_data = [gameweek.model_dump() for gameweek in gameweeks]
+
+            cursor.executemany(insert_sql, gameweeks_data)
+            conn.commit()
+
+        logger.info(
+            f"Successfully inserted/updated {len(gameweeks)} gameweeks")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to insert gameweeks: {e}")
+        conn.rollback()
+        raise
+
+
 def insert_teams(conn: connection, teams: List[Team]) -> None:
     """Insert team data into the database.
 
@@ -582,85 +1030,6 @@ def insert_players(conn: connection, players: List[Player]) -> None:
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert players: {e}")
-        conn.rollback()
-        raise
-
-
-def insert_gameweeks(conn: connection, gameweeks: List[Gameweek]) -> None:
-    """Insert gameweek data into the database.
-
-    Args:
-        conn: Database connection
-        gameweeks: List of Gameweek objects to insert
-
-    Raises:
-        psycopg2.Error: If insertion fails
-    """
-    if not gameweeks:
-        logger.info("No gameweeks to insert")
-        return
-
-    logger.info(f"Inserting {len(gameweeks)} gameweeks into database")
-
-    insert_sql = """
-        INSERT INTO gameweeks (
-            id, name, deadline_time, finished, is_previous, is_current, is_next,
-            release_time, average_entry_score, data_checked, highest_scoring_entry,
-            deadline_time_epoch, deadline_time_game_offset, highest_score,
-            cup_leagues_created, h2h_ko_matches_created, can_enter, can_manage,
-            released, ranked_count, transfers_made, most_selected,
-            most_transferred_in, most_captained, most_vice_captained, top_element
-        ) VALUES (
-            %(id)s, %(name)s, %(deadline_time)s, %(finished)s, %(is_previous)s,
-            %(is_current)s, %(is_next)s, %(release_time)s, %(average_entry_score)s,
-            %(data_checked)s, %(highest_scoring_entry)s, %(deadline_time_epoch)s,
-            %(deadline_time_game_offset)s, %(highest_score)s, %(cup_leagues_created)s,
-            %(h2h_ko_matches_created)s, %(can_enter)s, %(can_manage)s, %(released)s,
-            %(ranked_count)s, %(transfers_made)s, %(most_selected)s,
-            %(most_transferred_in)s, %(most_captained)s, %(most_vice_captained)s,
-            %(top_element)s
-        )
-        ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            deadline_time = EXCLUDED.deadline_time,
-            finished = EXCLUDED.finished,
-            is_previous = EXCLUDED.is_previous,
-            is_current = EXCLUDED.is_current,
-            is_next = EXCLUDED.is_next,
-            release_time = EXCLUDED.release_time,
-            average_entry_score = EXCLUDED.average_entry_score,
-            data_checked = EXCLUDED.data_checked,
-            highest_scoring_entry = EXCLUDED.highest_scoring_entry,
-            deadline_time_epoch = EXCLUDED.deadline_time_epoch,
-            deadline_time_game_offset = EXCLUDED.deadline_time_game_offset,
-            highest_score = EXCLUDED.highest_score,
-            cup_leagues_created = EXCLUDED.cup_leagues_created,
-            h2h_ko_matches_created = EXCLUDED.h2h_ko_matches_created,
-            can_enter = EXCLUDED.can_enter,
-            can_manage = EXCLUDED.can_manage,
-            released = EXCLUDED.released,
-            ranked_count = EXCLUDED.ranked_count,
-            transfers_made = EXCLUDED.transfers_made,
-            most_selected = EXCLUDED.most_selected,
-            most_transferred_in = EXCLUDED.most_transferred_in,
-            most_captained = EXCLUDED.most_captained,
-            most_vice_captained = EXCLUDED.most_vice_captained,
-            top_element = EXCLUDED.top_element
-    """
-
-    try:
-        with conn.cursor() as cursor:
-            # Convert Gameweek objects to dictionaries for psycopg2
-            gameweeks_data = [gameweek.model_dump() for gameweek in gameweeks]
-
-            cursor.executemany(insert_sql, gameweeks_data)
-            conn.commit()
-
-        logger.info(
-            f"Successfully inserted/updated {len(gameweeks)} gameweeks")
-
-    except psycopg2.Error as e:
-        logger.error(f"Failed to insert gameweeks: {e}")
         conn.rollback()
         raise
 

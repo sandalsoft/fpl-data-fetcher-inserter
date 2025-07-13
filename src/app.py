@@ -17,6 +17,7 @@ from .parser import (
 from .database import (
     DatabaseManager, execute_schema,
     insert_events, insert_players_new, insert_player_stats, insert_player_history,
+    insert_teams_new, insert_gameweeks_new,
     insert_teams, insert_players, insert_gameweeks, insert_fixtures
 )
 

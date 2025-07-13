@@ -47,7 +47,7 @@ def parse_events(data: Dict[str, Any]) -> List[Event]:
 
 
 def parse_players(data: Dict[str, Any]) -> List[Player]:
-    """Parse players data from bootstrap-static API response (simplified for new schema).
+    """Parse players data from bootstrap-static API response (full schema model).
 
     Args:
         data: The bootstrap-static JSON response
@@ -69,15 +69,90 @@ def parse_players(data: Dict[str, Any]) -> List[Player]:
 
     for player_data in players_data:
         try:
-            # Map to simplified Player model
+            # Helper function to safely get string values
+            def safe_str(value, default='0.0'):
+                if value is None or value == "":
+                    return default
+                return str(value)
+
+            # Helper function to safely get integer values
+            def safe_int(value, default=0):
+                if value is None or value == "":
+                    return default
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return default
+
+            # Map to full Player model
             player = Player(
                 id=player_data['id'],
                 code=player_data['code'],
                 first_name=player_data['first_name'],
                 second_name=player_data['second_name'],
-                team_id=player_data['team'],  # Map 'team' to 'team_id'
+                web_name=player_data['web_name'],
+                team=player_data['team'],
+                team_code=player_data['team_code'],
                 element_type=player_data['element_type'],
-                now_cost=player_data['now_cost']
+                now_cost=player_data['now_cost'],
+                total_points=safe_int(player_data.get('total_points', 0)),
+                status=player_data.get('status', 'a'),
+
+                # Performance stats
+                minutes=safe_int(player_data.get('minutes', 0)),
+                goals_scored=safe_int(player_data.get('goals_scored', 0)),
+                assists=safe_int(player_data.get('assists', 0)),
+                clean_sheets=safe_int(player_data.get('clean_sheets', 0)),
+                goals_conceded=safe_int(player_data.get('goals_conceded', 0)),
+                own_goals=safe_int(player_data.get('own_goals', 0)),
+                penalties_saved=safe_int(
+                    player_data.get('penalties_saved', 0)),
+                penalties_missed=safe_int(
+                    player_data.get('penalties_missed', 0)),
+                yellow_cards=safe_int(player_data.get('yellow_cards', 0)),
+                red_cards=safe_int(player_data.get('red_cards', 0)),
+                saves=safe_int(player_data.get('saves', 0)),
+                bonus=safe_int(player_data.get('bonus', 0)),
+
+                # String-based stats
+                form=safe_str(player_data.get('form', '0.0')),
+                points_per_game=safe_str(
+                    player_data.get('points_per_game', '0.0')),
+                selected_by_percent=safe_str(
+                    player_data.get('selected_by_percent', '0.0')),
+                value_form=safe_str(player_data.get('value_form', '0.0')),
+                value_season=safe_str(player_data.get('value_season', '0.0')),
+                expected_goals=safe_str(
+                    player_data.get('expected_goals'), '0.00'),
+                expected_assists=safe_str(
+                    player_data.get('expected_assists'), '0.00'),
+                expected_goal_involvements=safe_str(
+                    player_data.get('expected_goal_involvements'), '0.00'),
+                expected_goals_conceded=safe_str(
+                    player_data.get('expected_goals_conceded'), '0.00'),
+                influence=safe_str(player_data.get('influence', '0.0')),
+                creativity=safe_str(player_data.get('creativity', '0.0')),
+                threat=safe_str(player_data.get('threat', '0.0')),
+                ict_index=safe_str(player_data.get('ict_index', '0.0')),
+
+                # Transfer stats
+                transfers_in=safe_int(player_data.get('transfers_in', 0)),
+                transfers_out=safe_int(player_data.get('transfers_out', 0)),
+                transfers_in_event=safe_int(
+                    player_data.get('transfers_in_event', 0)),
+                transfers_out_event=safe_int(
+                    player_data.get('transfers_out_event', 0)),
+                event_points=safe_int(player_data.get('event_points', 0)),
+
+                # Optional nullable fields
+                chance_of_playing_this_round=player_data.get(
+                    'chance_of_playing_this_round'),
+                chance_of_playing_next_round=player_data.get(
+                    'chance_of_playing_next_round'),
+                news=player_data.get('news'),
+                news_added=player_data.get('news_added'),
+                squad_number=player_data.get('squad_number'),
+                photo=player_data.get('photo')
             )
             players.append(player)
         except Exception as e:
@@ -135,7 +210,8 @@ def parse_player_stats(data: Dict[str, Any], gameweek_id: int) -> List[PlayerSta
                 gameweek_id=gameweek_id,
                 total_points=safe_int(player_data.get('total_points')),
                 form=safe_float(player_data.get('form')),
-                selected_by_percent=safe_float(player_data.get('selected_by_percent')),
+                selected_by_percent=safe_float(
+                    player_data.get('selected_by_percent')),
                 transfers_in=safe_int(player_data.get('transfers_in')),
                 transfers_out=safe_int(player_data.get('transfers_out')),
                 minutes=safe_int(player_data.get('minutes')),
@@ -157,9 +233,12 @@ def parse_player_stats(data: Dict[str, Any], gameweek_id: int) -> List[PlayerSta
                 ict_index=safe_float(player_data.get('ict_index')),
                 starts=safe_int(player_data.get('starts')),
                 expected_goals=safe_float(player_data.get('expected_goals')),
-                expected_assists=safe_float(player_data.get('expected_assists')),
-                expected_goal_involvements=safe_float(player_data.get('expected_goal_involvements')),
-                expected_goals_conceded=player_data.get('expected_goals_conceded')
+                expected_assists=safe_float(
+                    player_data.get('expected_assists')),
+                expected_goal_involvements=safe_float(
+                    player_data.get('expected_goal_involvements')),
+                expected_goals_conceded=player_data.get(
+                    'expected_goals_conceded')
             )
             player_stats.append(stats)
         except Exception as e:
@@ -219,7 +298,8 @@ def parse_player_history(data: List[Dict[str, Any]], player_id: int) -> List[Pla
                 total_points=safe_int(history_data.get('total_points')),
                 value=safe_int(history_data.get('value')),
                 selected=safe_int(history_data.get('selected')),
-                transfers_balance=safe_int(history_data.get('transfers_balance')),
+                transfers_balance=safe_int(
+                    history_data.get('transfers_balance')),
                 transfers_in=safe_int(history_data.get('transfers_in')),
                 transfers_out=safe_int(history_data.get('transfers_out')),
                 minutes=safe_int(history_data.get('minutes')),
@@ -229,7 +309,8 @@ def parse_player_history(data: List[Dict[str, Any]], player_id: int) -> List[Pla
                 goals_conceded=safe_int(history_data.get('goals_conceded')),
                 own_goals=safe_int(history_data.get('own_goals')),
                 penalties_saved=safe_int(history_data.get('penalties_saved')),
-                penalties_missed=safe_int(history_data.get('penalties_missed')),
+                penalties_missed=safe_int(
+                    history_data.get('penalties_missed')),
                 yellow_cards=safe_int(history_data.get('yellow_cards')),
                 red_cards=safe_int(history_data.get('red_cards')),
                 saves=safe_int(history_data.get('saves')),
@@ -241,9 +322,12 @@ def parse_player_history(data: List[Dict[str, Any]], player_id: int) -> List[Pla
                 ict_index=safe_float(history_data.get('ict_index')),
                 starts=safe_int(history_data.get('starts')),
                 expected_goals=safe_float(history_data.get('expected_goals')),
-                expected_assists=safe_float(history_data.get('expected_assists')),
-                expected_goal_involvements=safe_float(history_data.get('expected_goal_involvements')),
-                expected_goals_conceded=safe_float(history_data.get('expected_goals_conceded'))
+                expected_assists=safe_float(
+                    history_data.get('expected_assists')),
+                expected_goal_involvements=safe_float(
+                    history_data.get('expected_goal_involvements')),
+                expected_goals_conceded=safe_float(
+                    history_data.get('expected_goals_conceded'))
             )
             player_history.append(history)
         except Exception as e:
@@ -251,7 +335,8 @@ def parse_player_history(data: List[Dict[str, Any]], player_id: int) -> List[Pla
                 f"Failed to parse player history for player ID {player_id}, round {history_data.get('round', 'unknown')}: {e}")
             raise
 
-    logger.info(f"Successfully parsed {len(player_history)} player history entries")
+    logger.info(
+        f"Successfully parsed {len(player_history)} player history entries")
     return player_history
 
 

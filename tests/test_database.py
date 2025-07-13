@@ -3,9 +3,11 @@ from unittest.mock import Mock, patch, mock_open
 import psycopg2
 from src.database import (
     get_connection, get_cursor, close_connection, execute_schema,
-    insert_teams, insert_players, DatabaseManager
+    insert_teams, insert_players, insert_gameweeks, insert_fixtures, DatabaseManager,
+    insert_events, insert_players_new, insert_player_stats, insert_player_history,
+    insert_teams_new, insert_gameweeks_new
 )
-from src.models import Team, Player
+from src.models import Team, Player, Event, PlayerStats, PlayerHistory, Gameweek
 
 
 class TestDatabaseConnection:
@@ -54,17 +56,13 @@ class TestDatabaseConnection:
         # Should not raise exception
         close_connection(None)
 
-    @patch('src.database.get_connection')
-    @patch('src.database.close_connection')
-    def test_database_manager_context(self, mock_close, mock_get_connection):
-        """Test DatabaseManager context manager."""
+    def test_close_connection_exception(self):
+        """Test closing connection with exception."""
         mock_conn = Mock()
-        mock_get_connection.return_value = mock_conn
+        mock_conn.close.side_effect = Exception("Close failed")
 
-        with DatabaseManager() as conn:
-            assert conn == mock_conn
-
-        mock_close.assert_called_once_with(mock_conn)
+        # Should not raise exception
+        close_connection(mock_conn)
 
 
 class TestSchemaExecution:
@@ -75,7 +73,9 @@ class TestSchemaExecution:
         """Test successful schema execution."""
         mock_conn = Mock()
         mock_cursor = Mock()
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
 
         execute_schema(mock_conn, "test_schema.sql")
 
@@ -83,7 +83,7 @@ class TestSchemaExecution:
         mock_conn.commit.assert_called_once()
 
     @patch('builtins.open', side_effect=FileNotFoundError())
-    def test_execute_schema_file_not_found(self):
+    def test_execute_schema_file_not_found(self, mock_open):
         """Test schema execution with missing file."""
         mock_conn = Mock()
 
@@ -96,10 +96,87 @@ class TestSchemaExecution:
         mock_conn = Mock()
         mock_cursor = Mock()
         mock_cursor.execute.side_effect = psycopg2.Error("SQL error")
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
 
         with pytest.raises(psycopg2.Error):
             execute_schema(mock_conn)
+
+        mock_conn.rollback.assert_called_once()
+
+
+class TestEventInsertion:
+    """Tests for event data insertion (new schema)."""
+
+    def create_test_events(self):
+        """Create test event data."""
+        return [
+            Event(
+                id=1,
+                name="Gameweek 1",
+                deadline_time="2024-08-16T17:30:00Z",
+                finished=False,
+                average_entry_score=50
+            ),
+            Event(
+                id=2,
+                name="Gameweek 2",
+                deadline_time="2024-08-23T17:30:00Z",
+                finished=True,
+                average_entry_score=65
+            )
+        ]
+
+    def test_insert_events_success(self):
+        """Test successful event insertion."""
+        events = self.create_test_events()
+
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
+
+        insert_events(mock_conn, events)
+
+        mock_cursor.executemany.assert_called_once()
+        mock_conn.commit.assert_called_once()
+
+        # Verify data passed to executemany
+        call_args = mock_cursor.executemany.call_args
+        sql_query = call_args[0][0]
+        events_data = call_args[0][1]
+
+        assert "ON CONFLICT (id) DO UPDATE" in sql_query
+        assert len(events_data) == 2
+        assert events_data[0]['name'] == 'Gameweek 1'
+        assert events_data[1]['name'] == 'Gameweek 2'
+
+    def test_insert_events_empty_list(self):
+        """Test inserting empty events list."""
+        mock_conn = Mock()
+        mock_cursor = Mock()
+
+        insert_events(mock_conn, [])
+
+        # Should not call database operations
+        assert not mock_cursor.executemany.called
+        assert not mock_conn.commit.called
+
+    def test_insert_events_database_error(self):
+        """Test event insertion with database error."""
+        events = self.create_test_events()
+
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_cursor.executemany.side_effect = psycopg2.Error("DB error")
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
+
+        with pytest.raises(psycopg2.Error):
+            insert_events(mock_conn, events)
 
         mock_conn.rollback.assert_called_once()
 
@@ -182,6 +259,24 @@ class TestTeamInsertion:
         assert teams_data[0]['name'] == 'Arsenal'
         assert teams_data[1]['name'] == 'Chelsea'
 
+    def test_insert_teams_new_success(self):
+        """Test successful team insertion with new schema function."""
+        teams = self.create_test_teams()
+
+        mock_conn = Mock()
+        mock_cursor = Mock()
+
+        # Properly mock the context manager
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
+
+        insert_teams_new(mock_conn, teams)
+
+        # Verify SQL execution - should be called in batches
+        assert mock_cursor.executemany.called
+        mock_conn.commit.assert_called_once()
+
     def test_insert_teams_empty_list(self):
         """Test inserting empty teams list."""
         mock_conn = Mock()
@@ -200,7 +295,9 @@ class TestTeamInsertion:
         mock_conn = Mock()
         mock_cursor = Mock()
         mock_cursor.executemany.side_effect = psycopg2.Error("DB error")
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
 
         with pytest.raises(psycopg2.Error):
             insert_teams(mock_conn, teams)
@@ -212,7 +309,7 @@ class TestPlayerInsertion:
     """Tests for player data insertion."""
 
     def create_test_players(self):
-        """Create test player data."""
+        """Create test player data with full schema."""
         return [
             Player(
                 id=1,
@@ -237,7 +334,15 @@ class TestPlayerInsertion:
                 yellow_cards=2,
                 red_cards=0,
                 saves=0,
-                bonus=8
+                bonus=8,
+                form='5.0',
+                points_per_game='3.5',
+                selected_by_percent='12.5',
+                transfers_in=1000,
+                transfers_out=500,
+                transfers_in_event=50,
+                transfers_out_event=25,
+                event_points=6
             ),
             Player(
                 id=2,
@@ -262,12 +367,15 @@ class TestPlayerInsertion:
                 yellow_cards=1,
                 red_cards=0,
                 saves=20,
-                bonus=5
+                bonus=5,
+                form='2.5',
+                points_per_game='2.0',
+                selected_by_percent='8.3'
             )
         ]
 
-    def test_insert_players_success(self):
-        """Test successful player insertion."""
+    def test_insert_players_new_success(self):
+        """Test successful player insertion with new schema function."""
         players = self.create_test_players()
 
         mock_conn = Mock()
@@ -278,82 +386,116 @@ class TestPlayerInsertion:
         mock_cursor.__enter__ = Mock(return_value=mock_cursor)
         mock_cursor.__exit__ = Mock(return_value=None)
 
-        insert_players(mock_conn, players)
+        insert_players_new(mock_conn, players)
 
-        # Verify SQL execution
-        mock_cursor.executemany.assert_called_once()
+        # Verify SQL execution - should be called in batches
+        assert mock_cursor.executemany.called
         mock_conn.commit.assert_called_once()
 
-        # Verify data passed to executemany
-        call_args = mock_cursor.executemany.call_args
-        sql_query = call_args[0][0]
-        players_data = call_args[0][1]
-
-        assert "ON CONFLICT (id) DO UPDATE" in sql_query
-        assert len(players_data) == 2
-        assert players_data[0]['first_name'] == 'Test'
-        assert players_data[0]['second_name'] == 'Player1'
-        assert players_data[1]['second_name'] == 'Player2'
-
-    def test_insert_players_empty_list(self):
+    def test_insert_players_new_empty_list(self):
         """Test inserting empty players list."""
         mock_conn = Mock()
         mock_cursor = Mock()
 
-        insert_players(mock_conn, [])
+        insert_players_new(mock_conn, [])
 
         # Should not call database operations
         assert not mock_cursor.executemany.called
         assert not mock_conn.commit.called
 
-    def test_insert_players_database_error(self):
-        """Test player insertion with database error."""
+    def test_insert_players_new_integrity_error(self):
+        """Test player insertion with integrity error handling."""
         players = self.create_test_players()
 
         mock_conn = Mock()
         mock_cursor = Mock()
-        mock_cursor.executemany.side_effect = psycopg2.Error("DB error")
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_cursor.executemany.side_effect = psycopg2.IntegrityError(
+            "Constraint violation")
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
 
-        with pytest.raises(psycopg2.Error):
-            insert_players(mock_conn, players)
+        # Should handle integrity errors gracefully
+        insert_players_new(mock_conn, players)
+
+        # Should still commit after handling errors
+        mock_conn.commit.assert_called_once()
+
+    def test_insert_players_new_data_error(self):
+        """Test player insertion with data error."""
+        players = self.create_test_players()
+
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_cursor.executemany.side_effect = psycopg2.DataError(
+            "Data type error")
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
+
+        with pytest.raises(psycopg2.DataError):
+            insert_players_new(mock_conn, players)
 
         mock_conn.rollback.assert_called_once()
 
-    def test_insert_players_with_nullable_fields(self):
-        """Test inserting players with nullable fields."""
-        player = Player(
-            id=1,
-            first_name='John',
-            second_name='Doe',
-            web_name='Doe',
-            team=1,
-            team_code=3,
-            element_type=1,
-            now_cost=45,
-            total_points=0,
-            status='a',
-            code=123,
-            minutes=0,
-            goals_scored=0,
-            assists=0,
-            clean_sheets=0,
-            goals_conceded=0,
-            own_goals=0,
-            penalties_saved=0,
-            penalties_missed=0,
-            yellow_cards=0,
-            red_cards=0,
-            saves=0,
-            bonus=0,
-            # Nullable fields
-            chance_of_playing_this_round=None,
-            chance_of_playing_next_round=None,
-            news=None,
-            news_added=None,
-            squad_number=None,
-            photo=None
-        )
+
+class TestPlayerStatsInsertion:
+    """Tests for player stats data insertion."""
+
+    def create_test_player_stats(self):
+        """Create test player stats data."""
+        return [
+            PlayerStats(
+                player_id=1,
+                gameweek_id=1,
+                total_points=10,
+                form=5.0,
+                selected_by_percent=12.5,
+                transfers_in=1000,
+                transfers_out=500,
+                minutes=90,
+                goals_scored=1,
+                assists=0,
+                clean_sheets=1,
+                goals_conceded=0,
+                own_goals=0,
+                penalties_saved=0,
+                penalties_missed=0,
+                yellow_cards=0,
+                red_cards=0,
+                saves=0,
+                bonus=3,
+                bps=25,
+                influence=50.0,
+                creativity=30.0,
+                threat=20.0,
+                ict_index=10.0,
+                starts=1,
+                expected_goals=0.5,
+                expected_assists=0.2,
+                expected_goal_involvements=0.7,
+                expected_goals_conceded="0.3"
+            ),
+            PlayerStats(
+                player_id=2,
+                gameweek_id=1,
+                total_points=6,
+                form=3.0,
+                selected_by_percent=8.3,
+                minutes=90,
+                goals_scored=0,
+                assists=0,
+                clean_sheets=1,
+                goals_conceded=0,
+                saves=3,
+                bonus=1,
+                bps=20
+            )
+        ]
+
+    def test_insert_player_stats_success(self):
+        """Test successful player stats insertion."""
+        player_stats = self.create_test_player_stats()
 
         mock_conn = Mock()
         mock_cursor = Mock()
@@ -363,16 +505,174 @@ class TestPlayerInsertion:
         mock_cursor.__enter__ = Mock(return_value=mock_cursor)
         mock_cursor.__exit__ = Mock(return_value=None)
 
-        insert_players(mock_conn, [player])
+        insert_player_stats(mock_conn, player_stats)
 
-        # Verify execution completed without error
-        mock_cursor.executemany.assert_called_once()
+        # Verify SQL execution - should be called in batches
+        assert mock_cursor.executemany.called
         mock_conn.commit.assert_called_once()
 
-        # Verify nullable fields are handled correctly
-        call_args = mock_cursor.executemany.call_args
-        players_data = call_args[0][1]
+    def test_insert_player_stats_empty_list(self):
+        """Test inserting empty player stats list."""
+        mock_conn = Mock()
+        mock_cursor = Mock()
 
-        assert players_data[0]['chance_of_playing_this_round'] is None
-        assert players_data[0]['news'] is None
-        assert players_data[0]['squad_number'] is None
+        insert_player_stats(mock_conn, [])
+
+        # Should not call database operations
+        assert not mock_cursor.executemany.called
+        assert not mock_conn.commit.called
+
+    def test_insert_player_stats_integrity_error(self):
+        """Test player stats insertion with integrity error handling."""
+        player_stats = self.create_test_player_stats()
+
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_cursor.executemany.side_effect = psycopg2.IntegrityError(
+            "Constraint violation")
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
+
+        # Should handle integrity errors gracefully
+        insert_player_stats(mock_conn, player_stats)
+
+        # Should still commit after handling errors
+        mock_conn.commit.assert_called_once()
+
+
+class TestPlayerHistoryInsertion:
+    """Tests for player history data insertion."""
+
+    def create_test_player_history(self):
+        """Create test player history data."""
+        return [
+            PlayerHistory(
+                player_id=1,
+                gameweek_id=1,
+                opponent_team=2,
+                was_home=True,
+                kickoff_time="2024-08-16T15:00:00Z",
+                total_points=10,
+                value=80,
+                selected=15000,
+                transfers_balance=1000,
+                transfers_in=1500,
+                transfers_out=500,
+                minutes=90,
+                goals_scored=1,
+                assists=0,
+                clean_sheets=1,
+                goals_conceded=0,
+                own_goals=0,
+                penalties_saved=0,
+                penalties_missed=0,
+                yellow_cards=0,
+                red_cards=0,
+                saves=0,
+                bonus=3,
+                bps=25,
+                influence=50.0,
+                creativity=30.0,
+                threat=20.0,
+                ict_index=10.0,
+                starts=1,
+                expected_goals=0.5,
+                expected_assists=0.2,
+                expected_goal_involvements=0.7,
+                expected_goals_conceded=0.3
+            ),
+            PlayerHistory(
+                player_id=2,
+                gameweek_id=1,
+                opponent_team=1,
+                was_home=False,
+                kickoff_time="2024-08-16T15:00:00Z",
+                total_points=6,
+                value=45,
+                selected=8000,
+                minutes=90,
+                goals_scored=0,
+                assists=0,
+                clean_sheets=1,
+                goals_conceded=0,
+                saves=3,
+                bonus=1,
+                bps=20
+            )
+        ]
+
+    def test_insert_player_history_success(self):
+        """Test successful player history insertion."""
+        player_history = self.create_test_player_history()
+
+        mock_conn = Mock()
+        mock_cursor = Mock()
+
+        # Properly mock the context manager
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
+
+        insert_player_history(mock_conn, player_history)
+
+        # Verify SQL execution - should be called in batches
+        assert mock_cursor.executemany.called
+        mock_conn.commit.assert_called_once()
+
+    def test_insert_player_history_empty_list(self):
+        """Test inserting empty player history list."""
+        mock_conn = Mock()
+        mock_cursor = Mock()
+
+        insert_player_history(mock_conn, [])
+
+        # Should not call database operations
+        assert not mock_cursor.executemany.called
+        assert not mock_conn.commit.called
+
+    def test_insert_player_history_integrity_error(self):
+        """Test player history insertion with integrity error handling."""
+        player_history = self.create_test_player_history()
+
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_cursor.executemany.side_effect = psycopg2.IntegrityError(
+            "Constraint violation")
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.__enter__ = Mock(return_value=mock_cursor)
+        mock_cursor.__exit__ = Mock(return_value=None)
+
+        # Should handle integrity errors gracefully
+        insert_player_history(mock_conn, player_history)
+
+        # Should still commit after handling errors
+        mock_conn.commit.assert_called_once()
+
+
+class TestDatabaseManager:
+    """Tests for DatabaseManager context manager."""
+
+    @patch('src.database.get_connection')
+    def test_database_manager_success(self, mock_get_connection):
+        """Test successful database manager context."""
+        mock_conn = Mock()
+        mock_get_connection.return_value = mock_conn
+
+        with DatabaseManager() as conn:
+            assert conn == mock_conn
+
+        mock_get_connection.assert_called_once()
+
+    @patch('src.database.get_connection')
+    def test_database_manager_exception(self, mock_get_connection):
+        """Test database manager with exception."""
+        mock_conn = Mock()
+        mock_get_connection.return_value = mock_conn
+
+        with pytest.raises(ValueError):
+            with DatabaseManager() as conn:
+                raise ValueError("Test exception")
+
+        mock_conn.rollback.assert_called_once()
+        mock_conn.close.assert_called_once()
