@@ -692,141 +692,58 @@ def insert_player_stats(conn: connection, player_stats: List[PlayerStats]) -> No
         raise
 
 
-def insert_player_history_optimized(conn: connection, player_history: List[PlayerHistory]) -> None:
-    """Insert player history data into the database using optimized bulk operations.
+def insert_player_history_optimized(conn: connection, player_history: List[PlayerHistory]) -> bool:
+    """Insert player history data into the database using optimized batch operations.
 
     Args:
         conn: Database connection
         player_history: List of PlayerHistory objects to insert
+
+    Returns:
+        bool: True if VACUUM ANALYZE should be run after this operation
 
     Raises:
         psycopg2.Error: If insertion fails
     """
     if not player_history:
         logger.info("No player history to insert")
-        return
+        return False
 
-    start_time = time.time()
     logger.info(
-        f"Inserting {len(player_history)} player history entries using optimized method")
+        f"Inserting {len(player_history)} player history entries using optimized batch method")
 
-    # Apply connection optimizations for bulk operations
     from .config import get_config
     config = get_config()
 
-    if config.get('enable_db_optimizations', True):
-        optimize_connection_for_bulk_operations(conn)
+    # Deduplicate the data before processing to avoid conflicts
+    # Keep the latest entry for each (player_id, gameweek_id) combination
+    seen = {}
+    deduplicated_history = []
+
+    for player_hist in player_history:
+        key = (player_hist.player_id, player_hist.gameweek_id)
+        if key not in seen:
+            seen[key] = player_hist
+            deduplicated_history.append(player_hist)
+        else:
+            # Replace if this entry has more recent or complete data
+            # For now, we'll just keep the first occurrence
+            pass
+
+    if len(deduplicated_history) != len(player_history):
+        logger.info(
+            f"Deduplicated {len(player_history)} records to {len(deduplicated_history)} records")
+        player_history = deduplicated_history
+
+    # Process in batches to avoid memory issues and improve performance
+    batch_size = config.get('batch_size', 1000)
+    total_processed = 0
+    start_time = time.time()
 
     try:
         with conn.cursor() as cursor:
-            # Step 1: Create temporary table for staging data
-            temp_table_sql = """
-                CREATE TEMPORARY TABLE temp_player_history (
-                    player_id INTEGER,
-                    gameweek_id INTEGER,
-                    opponent_team INTEGER,
-                    was_home BOOLEAN,
-                    kickoff_time TIMESTAMP,
-                    total_points INTEGER,
-                    value INTEGER,
-                    selected INTEGER,
-                    transfers_balance INTEGER,
-                    transfers_in INTEGER,
-                    transfers_out INTEGER,
-                    minutes INTEGER,
-                    goals_scored INTEGER,
-                    assists INTEGER,
-                    clean_sheets INTEGER,
-                    goals_conceded INTEGER,
-                    own_goals INTEGER,
-                    penalties_saved INTEGER,
-                    penalties_missed INTEGER,
-                    yellow_cards INTEGER,
-                    red_cards INTEGER,
-                    saves INTEGER,
-                    bonus INTEGER,
-                    bps INTEGER,
-                    influence REAL,
-                    creativity REAL,
-                    threat REAL,
-                    ict_index REAL,
-                    starts INTEGER,
-                    expected_goals REAL,
-                    expected_assists REAL,
-                    expected_goal_involvements REAL,
-                    expected_goals_conceded REAL
-                )
-            """
-            cursor.execute(temp_table_sql)
-            logger.debug("Created temporary staging table")
-
-            # Step 2: Prepare data for COPY operation
-            copy_data = StringIO()
-            field_count = 33  # Number of fields in temp table
-
-            for history in player_history:
-                # Convert PlayerHistory to row data, handling None values
-                row_data = [
-                    str(history.player_id) if history.player_id is not None else '\\N',
-                    str(history.gameweek_id) if history.gameweek_id is not None else '\\N',
-                    str(history.opponent_team) if history.opponent_team is not None else '\\N',
-                    'true' if history.was_home is True else 'false' if history.was_home is False else '\\N',
-                    str(history.kickoff_time) if history.kickoff_time is not None else '\\N',
-                    str(history.total_points) if history.total_points is not None else '\\N',
-                    str(history.value) if history.value is not None else '\\N',
-                    str(history.selected) if history.selected is not None else '\\N',
-                    str(history.transfers_balance) if history.transfers_balance is not None else '\\N',
-                    str(history.transfers_in) if history.transfers_in is not None else '\\N',
-                    str(history.transfers_out) if history.transfers_out is not None else '\\N',
-                    str(history.minutes) if history.minutes is not None else '\\N',
-                    str(history.goals_scored) if history.goals_scored is not None else '\\N',
-                    str(history.assists) if history.assists is not None else '\\N',
-                    str(history.clean_sheets) if history.clean_sheets is not None else '\\N',
-                    str(history.goals_conceded) if history.goals_conceded is not None else '\\N',
-                    str(history.own_goals) if history.own_goals is not None else '\\N',
-                    str(history.penalties_saved) if history.penalties_saved is not None else '\\N',
-                    str(history.penalties_missed) if history.penalties_missed is not None else '\\N',
-                    str(history.yellow_cards) if history.yellow_cards is not None else '\\N',
-                    str(history.red_cards) if history.red_cards is not None else '\\N',
-                    str(history.saves) if history.saves is not None else '\\N',
-                    str(history.bonus) if history.bonus is not None else '\\N',
-                    str(history.bps) if history.bps is not None else '\\N',
-                    str(history.influence) if history.influence is not None else '\\N',
-                    str(history.creativity) if history.creativity is not None else '\\N',
-                    str(history.threat) if history.threat is not None else '\\N',
-                    str(history.ict_index) if history.ict_index is not None else '\\N',
-                    str(history.starts) if history.starts is not None else '\\N',
-                    str(history.expected_goals) if history.expected_goals is not None else '\\N',
-                    str(history.expected_assists) if history.expected_assists is not None else '\\N',
-                    str(history.expected_goal_involvements) if history.expected_goal_involvements is not None else '\\N',
-                    str(history.expected_goals_conceded) if history.expected_goals_conceded is not None else '\\N'
-                ]
-                copy_data.write('\t'.join(row_data) + '\n')
-
-            copy_data.seek(0)
-
-            # Step 3: Use COPY to bulk load data into temporary table
-            copy_start = time.time()
-            cursor.copy_from(
-                copy_data,
-                'temp_player_history',
-                columns=[
-                    'player_id', 'gameweek_id', 'opponent_team', 'was_home', 'kickoff_time',
-                    'total_points', 'value', 'selected', 'transfers_balance', 'transfers_in',
-                    'transfers_out', 'minutes', 'goals_scored', 'assists', 'clean_sheets',
-                    'goals_conceded', 'own_goals', 'penalties_saved', 'penalties_missed',
-                    'yellow_cards', 'red_cards', 'saves', 'bonus', 'bps', 'influence', 'creativity',
-                    'threat', 'ict_index', 'starts', 'expected_goals', 'expected_assists',
-                    'expected_goal_involvements', 'expected_goals_conceded'
-                ]
-            )
-            copy_time = time.time() - copy_start
-            logger.debug(
-                f"COPY operation completed in {copy_time:.2f} seconds")
-
-            # Step 4: Perform efficient upsert from temporary table
-            upsert_start = time.time()
-            upsert_sql = """
+            # Prepare the INSERT statement with ON CONFLICT handling
+            insert_sql = """
                 INSERT INTO player_history (
                     player_id, gameweek_id, opponent_team, was_home, kickoff_time,
                     total_points, value, selected, transfers_balance, transfers_in,
@@ -835,17 +752,9 @@ def insert_player_history_optimized(conn: connection, player_history: List[Playe
                     yellow_cards, red_cards, saves, bonus, bps, influence, creativity,
                     threat, ict_index, starts, expected_goals, expected_assists,
                     expected_goal_involvements, expected_goals_conceded
-                )
-                SELECT 
-                    player_id, gameweek_id, opponent_team, was_home, kickoff_time,
-                    total_points, value, selected, transfers_balance, transfers_in,
-                    transfers_out, minutes, goals_scored, assists, clean_sheets,
-                    goals_conceded, own_goals, penalties_saved, penalties_missed,
-                    yellow_cards, red_cards, saves, bonus, bps, influence, creativity,
-                    threat, ict_index, starts, expected_goals, expected_assists,
-                    expected_goal_involvements, expected_goals_conceded
-                FROM temp_player_history
-                ON CONFLICT (player_id, gameweek_id) DO UPDATE SET
+                ) VALUES %s
+                ON CONFLICT (player_id, gameweek_id) 
+                DO UPDATE SET
                     opponent_team = EXCLUDED.opponent_team,
                     was_home = EXCLUDED.was_home,
                     kickoff_time = EXCLUDED.kickoff_time,
@@ -879,31 +788,78 @@ def insert_player_history_optimized(conn: connection, player_history: List[Playe
                     expected_goals_conceded = EXCLUDED.expected_goals_conceded
             """
 
-            cursor.execute(upsert_sql)
-            upsert_time = time.time() - upsert_start
-            logger.debug(
-                f"Upsert operation completed in {upsert_time:.2f} seconds")
+            # Process data in batches
+            for i in range(0, len(player_history), batch_size):
+                batch = player_history[i:i + batch_size]
+                batch_start = time.time()
 
-            # Step 5: Get row count and commit
-            cursor.execute("SELECT COUNT(*) FROM temp_player_history")
-            processed_count = cursor.fetchone()[0]
+                # Prepare batch data
+                batch_data = []
+                for player_hist in batch:
+                    batch_data.append((
+                        player_hist.player_id,
+                        player_hist.gameweek_id,
+                        player_hist.opponent_team,
+                        player_hist.was_home,
+                        player_hist.kickoff_time,
+                        player_hist.total_points,
+                        player_hist.value,
+                        player_hist.selected,
+                        player_hist.transfers_balance,
+                        player_hist.transfers_in,
+                        player_hist.transfers_out,
+                        player_hist.minutes,
+                        player_hist.goals_scored,
+                        player_hist.assists,
+                        player_hist.clean_sheets,
+                        player_hist.goals_conceded,
+                        player_hist.own_goals,
+                        player_hist.penalties_saved,
+                        player_hist.penalties_missed,
+                        player_hist.yellow_cards,
+                        player_hist.red_cards,
+                        player_hist.saves,
+                        player_hist.bonus,
+                        player_hist.bps,
+                        player_hist.influence,
+                        player_hist.creativity,
+                        player_hist.threat,
+                        player_hist.ict_index,
+                        player_hist.starts,
+                        player_hist.expected_goals,
+                        player_hist.expected_assists,
+                        player_hist.expected_goal_involvements,
+                        player_hist.expected_goals_conceded
+                    ))
 
-            conn.commit()
+                # Use execute_values for efficient batch insert
+                from psycopg2.extras import execute_values
+                execute_values(cursor, insert_sql, batch_data,
+                               template=None, page_size=batch_size)
 
+                batch_time = time.time() - batch_start
+                total_processed += len(batch)
+
+                logger.debug(
+                    f"Processed batch {i//batch_size + 1}: {len(batch)} records in {batch_time:.2f}s")
+
+            # Log performance metrics
             total_time = time.time() - start_time
             logger.info(
-                f"Successfully inserted/updated {processed_count} player history entries")
+                f"Successfully inserted/updated {total_processed} player history entries")
+            logger.info(f"Total operation time: {total_time:.2f}s")
             logger.info(
-                f"Total operation time: {total_time:.2f}s (COPY: {copy_time:.2f}s, Upsert: {upsert_time:.2f}s)")
-            logger.info(
-                f"Performance: {processed_count/total_time:.0f} records/second")
+                f"Performance: {total_processed/total_time:.0f} records/second")
 
-            # Optimize table for future queries after bulk insert
-            if (config.get('enable_vacuum_after_bulk', True) and
-                    processed_count > config.get('vacuum_threshold', 1000)):
+            # Return information about whether vacuum should be run
+            should_vacuum = (config.get('enable_vacuum_after_bulk', True) and
+                             total_processed > config.get('vacuum_threshold', 1000))
+
+            if should_vacuum:
                 logger.info(
-                    "Running VACUUM ANALYZE to optimize table for queries")
-                vacuum_analyze_table(conn, "player_history")
+                    f"Will run VACUUM ANALYZE after transaction commit for {total_processed} records")
+
+            return should_vacuum
 
     except psycopg2.Error as e:
         logger.error(f"Failed to insert player history (optimized): {e}")
@@ -935,16 +891,22 @@ def insert_player_history(conn: connection, player_history: List[PlayerHistory])
 
     # Use optimized version for large datasets based on configuration
     threshold = config.get('bulk_insert_threshold', 100)
+    should_vacuum = False
+
     if len(player_history) > threshold:
         logger.info(
             f"Using optimized insertion for {len(player_history)} records (threshold: {threshold})")
-        insert_player_history_optimized(conn, player_history)
-        return
+        should_vacuum = insert_player_history_optimized(conn, player_history)
+    else:
+        # Fallback to original method for smaller datasets
+        logger.info(
+            f"Using standard insertion for {len(player_history)} records (threshold: {threshold})")
+        insert_player_history_standard(conn, player_history)
 
-    # Fallback to original method for smaller datasets
-    logger.info(
-        f"Using standard insertion for {len(player_history)} records (threshold: {threshold})")
-    insert_player_history_standard(conn, player_history)
+    # Run VACUUM ANALYZE outside of the transaction if needed
+    if should_vacuum:
+        logger.info("Running VACUUM ANALYZE to optimize table for queries")
+        vacuum_analyze_table(conn, "player_history")
 
 
 def insert_player_history_standard(conn: connection, player_history: List[PlayerHistory]) -> None:
@@ -2024,6 +1986,7 @@ def vacuum_analyze_table(conn: connection, table_name: str) -> None:
         conn: Database connection
         table_name: Name of the table to vacuum and analyze
     """
+    old_autocommit = None
     try:
         # VACUUM ANALYZE must be run outside of a transaction
         old_autocommit = conn.autocommit
@@ -2035,11 +1998,15 @@ def vacuum_analyze_table(conn: connection, table_name: str) -> None:
             cursor.execute(vacuum_sql)
             logger.info(f"Completed VACUUM ANALYZE on {table_name}")
 
-        conn.autocommit = old_autocommit
-
     except psycopg2.Error as e:
         logger.warning(f"Failed to VACUUM ANALYZE {table_name}: {e}")
-        conn.autocommit = old_autocommit
+    finally:
+        # Always restore autocommit setting
+        if old_autocommit is not None:
+            try:
+                conn.autocommit = old_autocommit
+            except Exception as e:
+                logger.warning(f"Failed to restore autocommit setting: {e}")
 
 
 class DatabaseManager:

@@ -165,8 +165,8 @@ def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include
         # Step 4: Insert data into database
         logger.info("Step 4: Inserting data into database")
 
+        # Ensure schema exists
         with DatabaseManager() as conn:
-            # Ensure schema exists
             try:
                 execute_schema(conn)
                 logger.info("Database schema verified/created")
@@ -174,23 +174,29 @@ def run_new_pipeline(dry_run: bool = False, include_events: bool = True, include
                 logger.warning(
                     f"Schema execution failed (may already exist): {e}")
 
-            # Insert events
-            if gameweeks:
+        # Insert events in separate transaction
+        if gameweeks:
+            with DatabaseManager() as conn:
                 insert_gameweeks_new(conn, gameweeks)
 
-            if teams:
+        # Insert teams in separate transaction
+        if teams:
+            with DatabaseManager() as conn:
                 insert_teams_new(conn, teams)
 
-            # Insert players
-            if players:
+        # Insert players in separate transaction
+        if players:
+            with DatabaseManager() as conn:
                 insert_players_new(conn, players)
 
-            # Insert player stats
-            if player_stats:
+        # Insert player stats in separate transaction
+        if player_stats:
+            with DatabaseManager() as conn:
                 insert_player_stats(conn, player_stats)
 
-            # Insert player history
-            if player_history:
+        # Insert player history in separate transaction
+        if player_history:
+            with DatabaseManager() as conn:
                 insert_player_history(conn, player_history)
 
         pipeline_duration = time.time() - pipeline_start_time
