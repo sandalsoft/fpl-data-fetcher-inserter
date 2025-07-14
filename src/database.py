@@ -2024,4 +2024,9 @@ class DatabaseManager:
             logger.error(f"Exception in database context: {exc_val}")
             if self.conn:
                 self.conn.rollback()
+        else:
+            # No exception occurred, commit the transaction
+            if self.conn:
+                self.conn.commit()
+                logger.debug("Transaction committed successfully")
         close_connection(self.conn)

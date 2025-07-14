@@ -2,6 +2,33 @@
 -- Includes teams, gameweeks (events), players, fixtures (optional for opponent context),
 -- player_stats (cumulative snapshots from bootstrap-static),
 -- and player_history (per-gameweek details from element-summary).
+-- Drop tables in correct order to handle foreign key dependencies
+-- Drop dependent tables first, then parent tables
+-- Drop triggers first
+DROP TRIGGER IF EXISTS update_teams_updated_at ON teams;
+
+DROP TRIGGER IF EXISTS update_players_updated_at ON players;
+
+DROP TRIGGER IF EXISTS update_fixtures_updated_at ON fixtures;
+
+DROP TRIGGER IF EXISTS update_gameweeks_updated_at ON gameweeks;
+
+-- Drop function
+DROP FUNCTION IF EXISTS update_updated_at_column();
+
+-- Drop tables in dependency order (children first, then parents)
+DROP TABLE IF EXISTS player_history CASCADE;
+
+DROP TABLE IF EXISTS player_stats CASCADE;
+
+DROP TABLE IF EXISTS fixtures CASCADE;
+
+DROP TABLE IF EXISTS players CASCADE;
+
+DROP TABLE IF EXISTS gameweeks CASCADE;
+
+DROP TABLE IF EXISTS teams CASCADE;
+
 -- Teams table
 CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY,
